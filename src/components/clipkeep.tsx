@@ -74,6 +74,8 @@ function videoGroups(media: ClipMedia): Variant[][] {
 function bestVariant(media: ClipMedia): Variant {
   const groups = videoGroups(media);
   const photos = imagesOf(media);
+  // Multi-still posts (Instagram carousels / TikTok photos): open the gallery first.
+  if (photos.length > 1) return photos[0];
   if (groups.length && photos.length) return groups[0][0];
   if (photos.length) return photos[0];
   if (groups.length) return groups[0][0];
@@ -1005,7 +1007,7 @@ function HowTo() {
     {
       platform: "instagram",
       title: "Instagram",
-      body: "On a Reel or post, tap ··· → Copy link. Save downloads the file even if Photos doesn’t offer Save Video. Stories and private accounts won’t work.",
+      body: "On a Reel or post, tap ··· → Copy link. Carousels save every still (pick which ones). Save downloads the file even if Photos doesn’t offer Save Video. Stories and private accounts won’t work.",
     },
     {
       platform: "x",
