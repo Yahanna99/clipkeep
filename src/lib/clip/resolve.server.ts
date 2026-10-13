@@ -14,6 +14,23 @@ const UA =
 
 const IG_APP = "936619743392459";
 const IG_DOC = "27130156389949648";
+/** PolarisPostActionLoadPostQueryQuery — better sidecar/carousel coverage than the web_info doc. */
+const IG_SHORTCODE_LEGACY_DOC = "8845758582119845";
+
+const IG_MOBILE_UA =
+  "Instagram 275.0.0.27.98 Android (33/13; 280dpi; 720x1423; Xiaomi; Redmi 7; onclite; qcom; en_US; 458229237)";
+
+const IG_EMBED_HEADERS: Record<string, string> = {
+  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+  "Accept-Language": "en-US,en;q=0.9",
+  "Cache-Control": "max-age=0",
+  "Sec-Fetch-Dest": "document",
+  "Sec-Fetch-Mode": "navigate",
+  "Sec-Fetch-Site": "none",
+  "Sec-Fetch-User": "?1",
+  "Upgrade-Insecure-Requests": "1",
+  "User-Agent": UA,
+};
 
 class ClipError extends Error {
   constructor(message: string) {
@@ -159,8 +176,68 @@ type IgSession = { pageUrl: string; cookies: string; csrf: string; lsd: string }
 
 const IG_SHORTCODE_DOC = "27128499623469141";
 
-async function instagramSession(code: string): Promise<IgSession | "rate" | null> {
-  const pageUrl = `https://www.instagram.com/p/${code}/`;
+function igKindPath(opened: string): "reel" | "p" {
+  return /\/(?:reel|reels|tv)\//i.test(opened) ? "reel" : "p";
+}
+
+/** Convert GraphQL shortcode_media / sidecar nodes into the mobile item shape clipFromInstagramItem expects. */
+function fromShortcodeMedia(media: Record<string, unknown>): Record<string, unknown> | null {
+  const owner = asRecord(media.owner);
+  const captionEdges = asRecord(media.edge_media_to_caption);
+  const captionEdgeList = Array.isArray(captionEdges?.edges) ? captionEdges.edges : [];
+  const captionNode = asRecord(asRecord(captionEdgeList[0])?.node);
+  const sidecar = asRecord(media.edge_sidecar_to_children);
+  const edges = Array.isArray(sidecar?.edges) ? sidecar.edges : [];
+
+  const toItem = (node: Record<string, unknown>, index: number): Record<string, unknown> => {
+    const dims = asRecord(node.dimensions);
+    const videoUrl = cleanMediaUrl(str(node.video_url));
+    const display = cleanMediaUrl(str(node.display_url) || str(node.display_uri));
+    const item: Record<string, unknown> = {
+      pk: str(node.id) || `${index}`,
+      id: str(node.id) || `${index}`,
+    };
+    if (videoUrl) {
+      item.video_versions = [{ url: videoUrl, width: num(dims?.width), height: num(dims?.height) }];
+    }
+    if (display) {
+      item.display_uri = display;
+      item.image_versions2 = {
+        candidates: [{ url: display, width: num(dims?.width), height: num(dims?.height) }],
+      };
+    }
+    return item;
+  };
+
+  if (edges.length) {
+    const carousel_media = edges
+      .map((edge, index) => {
+        const node = asRecord(asRecord(edge)?.node);
+        return node ? toItem(node, index) : null;
+      })
+      .filter((item): item is Record<string, unknown> => !!item && !!(item.video_versions || item.image_versions2 || item.display_uri));
+    if (!carousel_media.length) return null;
+    return {
+      user: owner ? { username: str(owner.username) } : undefined,
+      caption: captionNode ? { text: str(captionNode.text) } : undefined,
+      carousel_media,
+      image_versions2: asRecord(carousel_media[0]?.image_versions2),
+      display_uri: str(carousel_media[0]?.display_uri),
+    };
+  }
+
+  const single = toItem(media, 0);
+  if (!(single.video_versions || single.image_versions2 || single.display_uri)) return null;
+  return {
+    user: owner ? { username: str(owner.username) } : undefined,
+    caption: captionNode ? { text: str(captionNode.text) } : undefined,
+    ...single,
+    video_duration: num(media.video_duration),
+  };
+}
+
+async function instagramSession(code: string, kind: "reel" | "p" = "p"): Promise<IgSession | "rate" | null> {
+  const pageUrl = `https://www.instagram.com/${kind}/${code}/`;
   const page = await readText(pageUrl, {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
@@ -169,6 +246,7 @@ async function instagramSession(code: string): Promise<IgSession | "rate" | null
     "Sec-Fetch-Site": "none",
     "Sec-Fetch-User": "?1",
     "Upgrade-Insecure-Requests": "1",
+    "User-Agent": UA,
   });
   if (page.status === 429) {
     await page.body?.cancel().catch(() => undefined);
@@ -182,16 +260,32 @@ async function instagramSession(code: string): Promise<IgSession | "rate" | null
 }
 
 function instagramItem(json: Record<string, unknown> | null): Record<string, unknown> | null {
-  const data = asRecord(json?.data);
-  if (!data) return null;
+  const data = asRecord(json?.data) || asRecord(asRecord(json?.gql_data));
+  if (!data) {
+    // Mobile media/info returns { items: [...] } at the top level.
+    const items = Array.isArray(json?.items) ? json.items : [];
+    const first = asRecord(items[0]);
+    if (first && (first.video_versions || first.image_versions2 || first.carousel_media || first.display_uri)) return first;
+    return null;
+  }
   const web = asRecord(data.xdt_api__v1__media__shortcode__web_info);
   const items = Array.isArray(web?.items) ? web.items : [];
   const first = asRecord(items[0]);
   if (first && (first.video_versions || first.image_versions2 || first.carousel_media || first.display_uri)) return first;
   const polaris = asRecord(data.xig_polaris_media);
   const gated = polaris ? asRecord(polaris.if_not_gated_logged_out) || asRecord(polaris.if_not_gated) : null;
-  if (gated) return gated;
+  if (gated) {
+    const fromGated = fromShortcodeMedia(gated);
+    if (fromGated) return fromGated;
+    if (gated.video_versions || gated.image_versions2 || gated.carousel_media) return gated;
+  }
   if (polaris && (polaris.video_versions || polaris.image_versions2 || polaris.carousel_media)) return polaris;
+
+  const shortcode = asRecord(data.xdt_shortcode_media) || asRecord(data.shortcode_media);
+  if (shortcode) {
+    const normalized = fromShortcodeMedia(shortcode);
+    if (normalized) return normalized;
+  }
   return null;
 }
 
@@ -259,6 +353,31 @@ async function instagramByShortcode(
   });
 }
 
+/** Alternate GraphQL doc used by public downloaders — returns xdt_shortcode_media + sidecar edges. */
+async function instagramByShortcodeLegacy(
+  session: IgSession,
+  code: string,
+): Promise<{ status: number; json: Record<string, unknown> | null }> {
+  return postInstagram(
+    "https://www.instagram.com/graphql/query",
+    session,
+    {
+      lsd: session.lsd,
+      fb_api_caller_class: "RelayModern",
+      fb_api_req_friendly_name: "PolarisPostActionLoadPostQueryQuery",
+      server_timestamps: "true",
+      variables: JSON.stringify({
+        shortcode: code,
+        fetch_tagged_user_count: null,
+        hoisted_comment_id: null,
+        hoisted_reply_id: null,
+      }),
+      doc_id: IG_SHORTCODE_LEGACY_DOC,
+    },
+    { "X-FB-Friendly-Name": "PolarisPostActionLoadPostQueryQuery" },
+  );
+}
+
 async function instagramByMediaId(
   session: IgSession,
   code: string,
@@ -282,27 +401,124 @@ async function instagramOembed(sourceUrl: string): Promise<{
   title?: string;
   author?: string;
   thumbnail?: string;
+  mediaId?: string;
 } | null> {
-  const response = await readText(
+  const urls = [
     `https://www.instagram.com/api/v1/oembed/?hidecaption=true&url=${encodeURIComponent(sourceUrl)}`,
-    {
+    `https://i.instagram.com/api/v1/oembed/?url=${encodeURIComponent(sourceUrl)}`,
+  ];
+  for (const endpoint of urls) {
+    const response = await readText(endpoint, {
       Accept: "application/json",
       "Accept-Language": "en-US,en;q=0.9",
       Referer: "https://www.instagram.com/",
       "X-IG-App-ID": IG_APP,
+      "User-Agent": endpoint.includes("i.instagram.com") ? IG_MOBILE_UA : UA,
       "Sec-Fetch-Dest": "empty",
       "Sec-Fetch-Mode": "cors",
       "Sec-Fetch-Site": "same-origin",
-    },
-  );
-  if (!response.ok) return null;
+    });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      continue;
+    }
+    const json = asRecord(await response.json().catch(() => null));
+    if (!json) continue;
+    return {
+      title: str(json.title),
+      author: str(json.author_name),
+      thumbnail: str(json.thumbnail_url),
+      mediaId: str(json.media_id) || (typeof json.media_id === "number" ? String(json.media_id) : undefined),
+    };
+  }
+  return null;
+}
+
+async function instagramMobileInfo(mediaId: string): Promise<Record<string, unknown> | null> {
+  const response = await readText(`https://i.instagram.com/api/v1/media/${mediaId}/info/`, {
+    Accept: "*/*",
+    "Accept-Language": "en-US",
+    "User-Agent": IG_MOBILE_UA,
+    "X-IG-App-ID": IG_APP,
+    "X-IG-App-Locale": "en_US",
+    "X-IG-Device-Locale": "en_US",
+    "X-IG-Mapped-Locale": "en_US",
+    "X-FB-HTTP-Engine": "Liger",
+  });
+  if (response.status === 429) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    return null;
+  }
   const json = asRecord(await response.json().catch(() => null));
-  if (!json) return null;
-  return {
-    title: str(json.title),
-    author: str(json.author_name),
-    thumbnail: str(json.thumbnail_url),
-  };
+  return instagramItem(json);
+}
+
+async function instagramFromEmbed(code: string, sourceUrl: string): Promise<ClipMedia | null> {
+  const paths = [`/p/${code}/embed/captioned/`, `/reel/${code}/embed/captioned/`, `/p/${code}/embed/`, `/reel/${code}/embed/`];
+  for (const path of paths) {
+    const response = await readText(`https://www.instagram.com${path}`, IG_EMBED_HEADERS);
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      continue;
+    }
+    const html = await response.text();
+    // Embed packs media into: "init",[],[{... contextJSON ...}],
+    const initMatch = html.match(/"init",\[\],\[(.*?)\]\],/);
+    if (initMatch?.[1]) {
+      try {
+        const packed = JSON.parse(initMatch[1]) as Record<string, unknown>;
+        const contextRaw = str(packed.contextJSON);
+        if (contextRaw) {
+          const context = asRecord(JSON.parse(contextRaw));
+          const gql = asRecord(context?.gql_data) || context;
+          const media =
+            asRecord(gql?.shortcode_media) ||
+            asRecord(gql?.xdt_shortcode_media) ||
+            asRecord(asRecord(gql?.gql_data)?.shortcode_media) ||
+            asRecord(asRecord(gql?.gql_data)?.xdt_shortcode_media);
+          if (media) {
+            const normalized = fromShortcodeMedia(media);
+            if (normalized) return clipFromInstagramItem(normalized, sourceUrl, code);
+          }
+          // Newer embeds sometimes put carousel/video fields on the context root.
+          if (context && (context.carousel_media || context.video_versions || context.image_versions2)) {
+            return clipFromInstagramItem(context, sourceUrl, code);
+          }
+        }
+      } catch {
+        /* try next path */
+      }
+    }
+
+    // Last-resort: collect CDN stills from the embed HTML (carousels often expose multiple).
+    const urls = [...html.matchAll(/https:\/\/[^"'\\\s]+cdninstagram\.com\/[^"'\\\s]+/gi)]
+      .map((match) => match[0].replace(/\\u0026/g, "&").replace(/\\\//g, "/"))
+      .filter((url) => /\/v\/t\d+/i.test(url) || /stp=/.test(url))
+      .filter((url) => !/\/s150x150\//i.test(url) && !/profile/i.test(url));
+    const unique = [...new Set(urls.map((url) => cleanMediaUrl(url) || url))].slice(0, 20);
+    if (unique.length >= 2) {
+      return {
+        platform: "instagram",
+        sourceUrl,
+        title: "Instagram post",
+        author: "Instagram",
+        thumbnail: unique[0],
+        variants: unique.map((url, index) => ({
+          id: `photo-${index + 1}`,
+          kind: "image" as const,
+          label: `Photo ${index + 1}`,
+          url,
+          ext: "jpg",
+          index: index + 1,
+        })),
+      };
+    }
+  }
+  return null;
 }
 
 function clipFromInstagramItem(
@@ -321,8 +537,13 @@ function clipFromInstagramItem(
   items.forEach((item, itemIndex) => {
     const group = str(item.pk) || str(item.id) || `${code}-${itemIndex}`;
     const videos = videoList(item);
+    const legacyVideo = cleanMediaUrl(str(item.video_url));
     if (videos.length) {
       for (const video of videos) pushVideo(variants, video, group);
+      return;
+    }
+    if (legacyVideo) {
+      pushVideo(variants, { url: legacyVideo }, group);
       return;
     }
     const image = bestImage(item);
@@ -337,6 +558,7 @@ function clipFromInstagramItem(
       width: image.width,
       height: image.height,
       index: photoIndex,
+      noWatermark: true,
     });
   });
 
@@ -367,7 +589,7 @@ function clipFromInstagramItem(
 
 async function resolveInstagram(raw: string): Promise<ClipMedia> {
   if (isInstagramStory(raw)) {
-    throw new ClipError("Stories and private accounts won’t save. Use a public Reel or post.");
+    throw new ClipError("Clipkeep can’t save Instagram Stories. Open the Reel or post → Share → Copy link.");
   }
   const opened = await resolveInstagramShare(raw);
   const code = instagramShortcode(opened);
@@ -376,7 +598,8 @@ async function resolveInstagram(raw: string): Promise<ClipMedia> {
       "That Instagram link looks cut off. Copy it again from the Reel or post — Share → Copy link — so the full code is included.",
     );
   }
-  const sourceUrl = `https://www.instagram.com/${/\/reel/.test(opened) ? "reel" : "p"}/${code}/`;
+  const kind = igKindPath(opened);
+  const sourceUrl = `https://www.instagram.com/${kind}/${code}/`;
   let sawPrivate = false;
   let sawRate = false;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -385,14 +608,22 @@ async function resolveInstagram(raw: string): Promise<ClipMedia> {
       await new Promise((resolve) => setTimeout(resolve, 700 * attempt));
     }
     const outcome = await runWithEgress(async () => {
-      const session = await instagramSession(code);
+      const session = await instagramSession(code, kind);
       if (session === "rate") return "rate" as const;
       if (!session) return "retry" as const;
+
       const primary = await instagramByShortcode(session, code);
       if (primary.status === 429) return "rate" as const;
       const item = instagramItem(primary.json);
       if (item) return clipFromInstagramItem(item, sourceUrl, code);
       if (primary.json && instagramFailure(primary.json) === "private") return "private" as const;
+
+      const polaris = await instagramByShortcodeLegacy(session, code);
+      if (polaris.status === 429) return "rate" as const;
+      const polarisItem = instagramItem(polaris.json);
+      if (polarisItem) return clipFromInstagramItem(polarisItem, sourceUrl, code);
+      if (polaris.json && instagramFailure(polaris.json) === "private") return "private" as const;
+
       if (attempt === 0) {
         const legacy = await instagramByMediaId(session, code);
         if (legacy.status === 429) return "rate" as const;
@@ -414,23 +645,55 @@ async function resolveInstagram(raw: string): Promise<ClipMedia> {
     throw new ClipError("That post is private or unavailable. Clipkeep only saves public posts.");
   }
 
-  const embed = await instagramOembed(sourceUrl);
-  if (embed?.thumbnail) {
+  // Fallbacks that often recover carousels when the web GraphQL docs return empty.
+  const oembed = await instagramOembed(sourceUrl);
+  if (oembed?.mediaId) {
+    const mobileItem = await instagramMobileInfo(oembed.mediaId);
+    if (mobileItem) {
+      const clip = clipFromInstagramItem(mobileItem, sourceUrl, code);
+      if (!clip.authorHandle && oembed.author) {
+        clip.author = oembed.author;
+        clip.authorHandle = oembed.author;
+      }
+      if (oembed.title) clip.title = oembed.title.replace(/\s+/g, " ").trim();
+      return clip;
+    }
+  }
+
+  try {
+    const mediaId = shortcodeToId(code);
+    const mobileItem = await instagramMobileInfo(mediaId);
+    if (mobileItem) return clipFromInstagramItem(mobileItem, sourceUrl, code);
+  } catch {
+    /* shortcode decode can throw on malformed codes — already validated above */
+  }
+
+  const fromEmbed = await instagramFromEmbed(code, sourceUrl);
+  if (fromEmbed) {
+    if (oembed?.author && fromEmbed.author === "Instagram") {
+      fromEmbed.author = oembed.author;
+      fromEmbed.authorHandle = oembed.author;
+    }
+    if (oembed?.title) fromEmbed.title = oembed.title.replace(/\s+/g, " ").trim();
+    return fromEmbed;
+  }
+
+  if (oembed?.thumbnail) {
     return {
       platform: "instagram",
       sourceUrl,
-      title: embed.title?.replace(/\s+/g, " ").trim() || "Instagram post",
-      author: embed.author || "Instagram",
-      authorHandle: embed.author,
-      thumbnail: embed.thumbnail,
+      title: oembed.title?.replace(/\s+/g, " ").trim() || "Instagram post",
+      author: oembed.author || "Instagram",
+      authorHandle: oembed.author,
+      thumbnail: oembed.thumbnail,
       notice:
-        "Instagram only sent the cover photo this time, not the full clip. Tap Fetch again in a moment — public Reels usually come through on the next try.",
+        "Instagram only sent the cover photo this time, not the full clip or gallery. Tap Fetch again in a moment — public posts usually come through on the next try.",
       variants: [
         {
           id: "cover",
           kind: "image",
           label: "Cover photo",
-          url: embed.thumbnail,
+          url: oembed.thumbnail,
           ext: "jpg",
           index: 1,
         },
