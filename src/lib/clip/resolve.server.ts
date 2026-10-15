@@ -1,3 +1,5 @@
+import { ByteLru } from "./cache";
+import { Cooldown } from "./cooldown";
 import { egressFetch, rotateEgress, runWithEgress } from "./egress.server";
 import {
   ensureHttp,
@@ -40,7 +42,21 @@ class ClipError extends Error {
 }
 
 const RESOLVE_TTL_MS = 4 * 60 * 1000;
-const resolveCache = new Map<string, { at: number; media: ClipMedia }>();
+/** Bounded so a flood of distinct posts can't grow this map without limit. */
+const resolveCache = new ByteLru<ClipMedia>({
+  maxEntries: 200,
+  maxBytes: Number.MAX_SAFE_INTEGER,
+  ttlMs: RESOLVE_TTL_MS,
+});
+
+/**
+ * After Instagram rate-limits us, pause all IG resolution for a while. The
+ * retry fan-out is heavy (a session GET plus several GraphQL POSTs per attempt,
+ * and the client retries too), so continuing to hammer a tripped limiter keeps
+ * it tripped — pausing lets it reset instead of one post failing all of them.
+ */
+const IG_RATE_COOLDOWN_MS = 90_000;
+const igCooldown = new Cooldown();
 
 async function readText(url: string, headers: HeadersInit, timeoutMs = 20000): Promise<Response> {
   return egressFetch(url, { headers, signal: AbortSignal.timeout(timeoutMs), redirect: "follow" });
@@ -591,6 +607,9 @@ async function resolveInstagram(raw: string): Promise<ClipMedia> {
   if (isInstagramStory(raw)) {
     throw new ClipError("Clipkeep can’t save Instagram Stories. Open the Reel or post → Share → Copy link.");
   }
+  if (igCooldown.active()) {
+    throw new ClipError("Instagram is rate-limiting us right now. Wait a minute and try again.");
+  }
   const opened = await resolveInstagramShare(raw);
   const code = instagramShortcode(opened);
   if (!code || code.length < 8) {
@@ -638,11 +657,21 @@ async function resolveInstagram(raw: string): Promise<ClipMedia> {
       sawPrivate = true;
       break;
     }
-    if (outcome === "rate") sawRate = true;
+    if (outcome === "rate") {
+      // Stop immediately and pause IG: retrying now only deepens the limit.
+      sawRate = true;
+      igCooldown.trip(IG_RATE_COOLDOWN_MS);
+      break;
+    }
   }
 
   if (sawPrivate) {
     throw new ClipError("That post is private or unavailable. Clipkeep only saves public posts.");
+  }
+
+  if (sawRate) {
+    // Skip the fallback chain too — every one of those is another IG request.
+    throw new ClipError("Instagram is rate-limiting us right now. Wait a minute and try again.");
   }
 
   // Fallbacks that often recover carousels when the web GraphQL docs return empty.
@@ -702,9 +731,7 @@ async function resolveInstagram(raw: string): Promise<ClipMedia> {
   }
 
   throw new ClipError(
-    sawRate
-      ? "Instagram is rate-limiting us right now. Wait a minute and try again."
-      : "Instagram didn’t return this post. Make sure it’s public, then copy the link from Share → Copy link. If it still fails, Instagram is blocking the request — try again in a minute.",
+    "Instagram didn’t return this post. Make sure it’s public, then copy the link from Share → Copy link. If it still fails, Instagram is blocking the request — try again in a minute.",
   );
 }
 
@@ -943,13 +970,13 @@ export async function resolveClipUrl(input: string, options?: { fresh?: boolean 
           : "";
   if (!options?.fresh && cacheKey) {
     const hit = resolveCache.get(cacheKey);
-    if (hit && Date.now() - hit.at < RESOLVE_TTL_MS) return hit.media;
+    if (hit) return hit;
   }
   let media: ClipMedia;
   if (platform === "instagram") media = await resolveInstagram(extracted);
   else if (platform === "tiktok") media = await resolveTikTok(extracted);
   else if (platform === "x") media = await resolveX(extracted);
   else throw new ClipError("Paste a TikTok, Instagram, or X link.");
-  if (cacheKey && !media.notice) resolveCache.set(cacheKey, { at: Date.now(), media });
+  if (cacheKey && !media.notice) resolveCache.set(cacheKey, media);
   return media;
 }
