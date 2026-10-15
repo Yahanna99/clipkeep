@@ -343,6 +343,42 @@ async function zipFiles(files: File[], name: string): Promise<File> {
   return new File([bytesToBuffer(concat([...locals, centralDir, end]))], name, { type: "application/zip" });
 }
 
+type ToastTone = "success" | "error" | "info" | "loading";
+
+/**
+ * The badge that leads every toast. It springs in, and the success tick draws
+ * itself — the same playful language as the save button. Wired in via the
+ * `<Toaster icons={…}>` prop so Sonner uses it for each toast type.
+ */
+function ToastBadge({ tone }: { tone: ToastTone }) {
+  return (
+    <span className="clip-toast-badge" data-tone={tone}>
+      {tone === "loading" ? (
+        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+      ) : (
+        <svg
+          viewBox="0 0 24 24"
+          className="clip-toast-tick"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={tone === "info" ? 2.5 : 3}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          {tone === "success" ? (
+            <path d="M20 6 9 17l-5-5" />
+          ) : tone === "error" ? (
+            <path d="M6 6l12 12M18 6 6 18" />
+          ) : (
+            <path d="M12 16v-4M12 8h.01" />
+          )}
+        </svg>
+      )}
+    </span>
+  );
+}
+
 function Mark({ className = "size-7" }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 100" className={`text-accent ${className}`} aria-hidden="true">
@@ -532,7 +568,7 @@ export function Clipkeep() {
         const message =
           error instanceof DownloadError ? error.message : errorText(error) || "Couldn’t prepare that file. Tap Save to try again.";
         setSaveFault(message);
-        toast(message);
+        toast.error("Couldn’t prepare that file", { description: message });
       } finally {
         if (!cancelledRun) setPreparing(false);
       }
@@ -546,7 +582,7 @@ export function Clipkeep() {
 
   function refreshSource(source: ClipMedia): Promise<ClipMedia> {
     if (refreshFlight.current) return refreshFlight.current;
-    toast("This link expired. Trying a fresh copy…");
+    toast.info("Link expired", { description: "Fetching a fresh copy…" });
     const pending = resolveClip({ data: { url: source.sourceUrl, fresh: true } })
       .then((next) => {
         setMedia(next);
@@ -597,14 +633,22 @@ export function Clipkeep() {
     const shareFiles = ready.files;
     if (shareFiles.length && canShareFiles(shareFiles)) {
       event.preventDefault();
+      // Capture the target now: React nulls `currentTarget` after the handler
+      // returns, so reading it inside the async catch throws and the fallback
+      // download never fires on iOS.
+      const href = event.currentTarget.getAttribute("href");
       void navigator
         .share({ files: shareFiles })
         .then(() => {
-          toast(shareFiles.length > 1 ? "Tap Save Images to add them to Photos." : "Tap Save Video or Save Image.");
+          toast.success(shareFiles.length > 1 ? `${shareFiles.length} photos ready` : "Ready to save", {
+            description:
+              shareFiles.length > 1
+                ? "Tap Save Images to add them to Photos."
+                : "Tap Save Video or Save Image in the share sheet.",
+          });
         })
         .catch((caught: unknown) => {
           if (cancelled(caught)) return;
-          const href = event.currentTarget.getAttribute("href");
           if (href) window.location.assign(href);
         });
     }
@@ -617,7 +661,11 @@ export function Clipkeep() {
       if (!url || !isConcretePost(url)) {
         setDraft(text.trim());
         if (inputRef.current) inputRef.current.value = text.trim();
-        toast(text.trim() ? "Couldn’t find a post link in that paste" : "Clipboard is empty");
+        toast.error(text.trim() ? "No post link found" : "Clipboard is empty", {
+          description: text.trim()
+            ? "Copy the link from the post’s Share menu."
+            : "Copy a public post link, then paste it here.",
+        });
         return;
       }
       setDraft(url);
@@ -625,7 +673,7 @@ export function Clipkeep() {
       void fetchPost(url, true);
     } catch {
       inputRef.current?.focus();
-      toast("Paste the link into the field");
+      toast.info("Paste a link first", { description: "Copy a public post link, then tap Paste." });
     }
   }
 
@@ -641,7 +689,27 @@ export function Clipkeep() {
 
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-bg text-fg">
-      <Toaster theme="dark" position="top-center" />
+      <Toaster
+        theme="dark"
+        position="top-center"
+        gap={10}
+        offset={18}
+        duration={3400}
+        icons={{
+          success: <ToastBadge tone="success" />,
+          error: <ToastBadge tone="error" />,
+          info: <ToastBadge tone="info" />,
+          loading: <ToastBadge tone="loading" />,
+        }}
+        toastOptions={{
+          classNames: {
+            toast: "clip-toast",
+            title: "clip-toast-title",
+            description: "clip-toast-desc",
+            icon: "clip-toast-icon",
+          },
+        }}
+      />
       <div aria-hidden="true" className="hero-glow pointer-events-none absolute inset-x-0 top-0 h-64" />
       <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 pb-16 pt-6 sm:px-6">
         <header className="flex items-center justify-between">
@@ -883,11 +951,17 @@ export function Clipkeep() {
                     href={ready?.url}
                     download={ready?.file.name || downloadName}
                     aria-disabled={preparing || saveCount === 0 ? true : undefined}
+                    data-ready={ready ? "true" : "false"}
                     onClick={(event) => onSaveClick(event)}
-                    className={`inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-5 text-sm font-medium text-accent-fg ${preparing || saveCount === 0 ? "pointer-events-none opacity-60" : ""}`}
+                    className={`save-btn inline-flex h-12 flex-1 items-center justify-center overflow-hidden rounded-lg bg-accent px-5 text-sm font-medium text-accent-fg ${preparing || saveCount === 0 ? "pointer-events-none opacity-60" : ""}`}
                   >
-                    {preparing && !ready ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-                    {preparing && !ready ? "Preparing" : saveLabel}
+                    <span
+                      key={preparing && !ready ? "preparing" : "ready"}
+                      className="save-label inline-flex items-center gap-2"
+                    >
+                      {preparing && !ready ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                      {preparing && !ready ? "Preparing" : saveLabel}
+                    </span>
                   </a>
                   <a
                     href={proxyUrl(selected.url, downloadName)}

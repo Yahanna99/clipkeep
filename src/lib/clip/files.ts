@@ -1,3 +1,4 @@
+import { ByteLru } from "./cache";
 import { egressFetch } from "./egress.server";
 import { stampMp4Times } from "./mp4";
 
@@ -17,7 +18,16 @@ const UA =
 const MAX_BYTES = 48 * 1024 * 1024;
 const CACHE_MS = 120_000;
 
-const fullLoads = new Map<string, Promise<{ type: string; bytes: Uint8Array }>>();
+/**
+ * Full-file buffers, bounded by entry count and total retained bytes. Without
+ * these caps, distinct query params on the same CDN file pin many 48 MB copies
+ * in memory — see cache.ts.
+ */
+const fullLoads = new ByteLru<Promise<{ type: string; bytes: Uint8Array }>>({
+  maxEntries: 12,
+  maxBytes: 72 * 1024 * 1024,
+  ttlMs: CACHE_MS,
+});
 
 const IG_CONCURRENCY = 2;
 const IG_GAP_MS = 400;
@@ -247,18 +257,17 @@ function loadFullOnce(target: URL, accept: string): Promise<{ type: string; byte
   const key = `${accept}\n${target.toString()}`;
   const existing = fullLoads.get(key);
   if (existing) return existing;
-  const pending = loadFull(target, accept)
+  const pending = loadFull(target, accept);
+  // Store the pending promise (weight 0) so concurrent callers share one fetch,
+  // then account its bytes and start the TTL once it resolves.
+  fullLoads.set(key, pending, 0);
+  pending
     .then((stored) => {
-      setTimeout(() => {
-        if (fullLoads.get(key) === pending) fullLoads.delete(key);
-      }, CACHE_MS);
-      return stored;
+      if (fullLoads.peek(key) === pending) fullLoads.weigh(key, stored.bytes.byteLength);
     })
-    .catch((error: unknown) => {
-      if (fullLoads.get(key) === pending) fullLoads.delete(key);
-      throw error;
+    .catch(() => {
+      if (fullLoads.peek(key) === pending) fullLoads.delete(key);
     });
-  fullLoads.set(key, pending);
   return pending;
 }
 
@@ -307,7 +316,54 @@ function fileResponse(
   return new Response(body, { status, headers });
 }
 
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX = 60;
+const RATE_MAX_KEYS = 10_000;
+const MAX_INFLIGHT = 8;
+const rateBuckets = new Map<string, { count: number; resetAt: number }>();
+let inflight = 0;
+
+function clientKey(request: Request): string {
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) return forwarded.split(",")[0]?.trim() || "unknown";
+  return request.headers.get("x-real-ip") || "unknown";
+}
+
+/**
+ * Best-effort, per-instance throttle. On serverless this only bounds a single
+ * function instance — pair it with edge/WAF limits for real protection — but it
+ * stops a single client from hammering the proxy in one burst.
+ */
+function rateLimited(request: Request): boolean {
+  const now = Date.now();
+  const key = clientKey(request);
+  const bucket = rateBuckets.get(key);
+  if (!bucket || now > bucket.resetAt) {
+    if (rateBuckets.size >= RATE_MAX_KEYS) rateBuckets.clear();
+    rateBuckets.set(key, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return false;
+  }
+  bucket.count += 1;
+  return bucket.count > RATE_MAX;
+}
+
+/**
+ * Unauthenticated media proxy over an allow-listed set of CDNs. Throttle per
+ * client and cap concurrent upstream loads so a burst can't exhaust memory or
+ * bandwidth; the process-local buffer cache is bounded separately (cache.ts).
+ */
 export async function proxyMedia(request: Request): Promise<Response> {
+  if (rateLimited(request)) return fail(429, "Rate limited");
+  if (inflight >= MAX_INFLIGHT) return fail(503, "Busy");
+  inflight += 1;
+  try {
+    return await handleProxy(request);
+  } finally {
+    inflight -= 1;
+  }
+}
+
+async function handleProxy(request: Request): Promise<Response> {
   const query = new URL(request.url).searchParams;
   const raw = query.get("u") || "";
   const downloadName = safeFileName(query.get("n") || "clipkeep");

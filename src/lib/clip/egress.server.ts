@@ -112,7 +112,10 @@ function fetchViaProxy(targetUrl: string, init: RequestInit, proxyUrl: string): 
 export async function egressFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const egress = current();
   const headers = new Headers(init.headers);
-  headers.set("User-Agent", egress.ua);
+  // Only supply the rotated UA when the caller didn't set one. Several IG
+  // endpoints (the mobile media/info API, the mobile oembed) require their own
+  // UA; clobbering it here made those fallbacks fail intermittently.
+  if (!headers.has("user-agent")) headers.set("User-Agent", egress.ua);
   if (!egress.proxy) return fetch(url, { ...init, headers });
   try {
     return await fetchViaProxy(url, { ...init, headers }, egress.proxy);
