@@ -103,6 +103,37 @@
   animation: liquid-sheen var(--motion-pop) var(--ease-out) both;
 }
 
+
+/* Extra bounce when the user actually saves — a punchier spring than the
+   ready-hand-off pop, so the click feels answered. */
+.save-btn[data-bounce="true"] {
+  animation: save-bounce 720ms var(--ease-spring) both;
+}
+
+@keyframes save-bounce {
+  0% {
+    transform: scale(1);
+  }
+  18% {
+    transform: scale(0.9);
+  }
+  42% {
+    transform: scale(1.12);
+  }
+  62% {
+    transform: scale(0.96);
+  }
+  78% {
+    transform: scale(1.05);
+  }
+  90% {
+    transform: scale(0.99);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
 /* The label swaps between "Preparing" and "Save ...". Re-mounting it (via a
    key) lets this tiny rise play so the text flows in rather than snapping. */
 .save-label {
@@ -111,16 +142,19 @@
 
 @keyframes liquid-pop {
   0% {
-    transform: scale(0.9);
+    transform: scale(0.88);
   }
-  38% {
-    transform: scale(1.05);
+  35% {
+    transform: scale(1.1);
   }
-  60% {
-    transform: scale(0.982);
+  55% {
+    transform: scale(0.96);
   }
-  78% {
-    transform: scale(1.012);
+  72% {
+    transform: scale(1.04);
+  }
+  88% {
+    transform: scale(0.99);
   }
   100% {
     transform: scale(1);
@@ -152,12 +186,42 @@
   }
 }
 
+
+/* Recent row — bounce the freshly kept clip so saving lands with life. */
+.recent-item[data-just-saved="true"] {
+  animation: recent-bounce 780ms var(--ease-spring) both;
+  transform-origin: center bottom;
+}
+
+@keyframes recent-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.82);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-8px) scale(1.08);
+  }
+  62% {
+    transform: translateY(3px) scale(0.96);
+  }
+  80% {
+    transform: translateY(-2px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .reveal,
   .save-btn,
   .save-btn[data-ready="true"],
   .save-btn[data-ready="true"]::after,
-  .save-label {
+  .save-btn[data-bounce="true"],
+  .save-label,
+  .recent-item[data-just-saved="true"] {
     animation: none !important;
     transition: none !important;
   }
@@ -179,6 +243,25 @@
   box-shadow:
     inset 0 1px 0 0 color-mix(in oklab, white 8%, transparent),
     0 20px 48px -16px rgba(0, 0, 0, 0.72) !important;
+  animation: toast-bounce 640ms var(--ease-spring) both;
+}
+
+@keyframes toast-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(-12px) scale(0.86);
+  }
+  45% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.06);
+  }
+  70% {
+    transform: translateY(-2px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .clip-toast::after {
@@ -262,15 +345,18 @@
 
 @keyframes icon-pop {
   0% {
-    transform: scale(0.4) rotate(-12deg);
+    transform: scale(0.28) rotate(-18deg);
     opacity: 0;
   }
-  45% {
-    transform: scale(1.14) rotate(3deg);
+  40% {
+    transform: scale(1.22) rotate(5deg);
     opacity: 1;
   }
-  70% {
-    transform: scale(0.96) rotate(-1deg);
+  62% {
+    transform: scale(0.9) rotate(-3deg);
+  }
+  80% {
+    transform: scale(1.08) rotate(1deg);
   }
   100% {
     transform: scale(1) rotate(0);
@@ -284,6 +370,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .clip-toast,
   .clip-toast::after,
   .clip-toast-icon,
   .clip-toast-tick path {
