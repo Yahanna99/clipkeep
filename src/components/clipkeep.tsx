@@ -428,7 +428,11 @@ export function Clipkeep() {
   const [preparing, setPreparing] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [saveFault, setSaveFault] = useState<string | null>(null);
+  const [saveBounce, setSaveBounce] = useState(false);
+  const [justSavedId, setJustSavedId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const saveBounceTimer = useRef<number | null>(null);
+  const justSavedTimer = useRef<number | null>(null);
   const requestId = useRef(0);
   const readyUrl = useRef<string | null>(null);
   const refreshFlight = useRef<Promise<ClipMedia> | null>(null);
@@ -453,13 +457,16 @@ export function Clipkeep() {
   useEffect(() => {
     return () => {
       if (readyUrl.current) URL.revokeObjectURL(readyUrl.current);
+      if (saveBounceTimer.current) window.clearTimeout(saveBounceTimer.current);
+      if (justSavedTimer.current) window.clearTimeout(justSavedTimer.current);
     };
   }, []);
 
   function remember(next: ClipMedia) {
+    const id = `${Date.now()}`;
     const items = [
       {
-        id: `${Date.now()}`,
+        id,
         platform: next.platform,
         title: next.title,
         author: next.author,
@@ -471,6 +478,19 @@ export function Clipkeep() {
     ];
     writeHistory(items);
     setHistory(items);
+    setJustSavedId(id);
+    if (justSavedTimer.current) window.clearTimeout(justSavedTimer.current);
+    justSavedTimer.current = window.setTimeout(() => setJustSavedId(null), 900);
+  }
+
+  function triggerSaveBounce() {
+    setSaveBounce(false);
+    // Retrigger in the next frame so re-clicks always replay the spring.
+    requestAnimationFrame(() => {
+      setSaveBounce(true);
+      if (saveBounceTimer.current) window.clearTimeout(saveBounceTimer.current);
+      saveBounceTimer.current = window.setTimeout(() => setSaveBounce(false), 780);
+    });
   }
 
   async function fetchPost(input: string, force = false) {
@@ -630,6 +650,7 @@ export function Clipkeep() {
       if (!preparing && saveCount > 0) setAttempt((value) => value + 1);
       return;
     }
+    triggerSaveBounce();
     const shareFiles = ready.files;
     if (shareFiles.length && canShareFiles(shareFiles)) {
       event.preventDefault();
@@ -650,8 +671,15 @@ export function Clipkeep() {
         .catch((caught: unknown) => {
           if (cancelled(caught)) return;
           if (href) window.location.assign(href);
+          toast.success(saveCount > 1 ? `${saveCount} files saved` : "Saved", {
+            description: "Your download should start in a moment.",
+          });
         });
+      return;
     }
+    toast.success(saveCount > 1 ? `${saveCount} files saved` : "Saved", {
+      description: "Your download should start in a moment.",
+    });
   }
 
   async function pasteLink() {
@@ -952,6 +980,7 @@ export function Clipkeep() {
                     download={ready?.file.name || downloadName}
                     aria-disabled={preparing || saveCount === 0 ? true : undefined}
                     data-ready={ready ? "true" : "false"}
+                    data-bounce={saveBounce ? "true" : "false"}
                     onClick={(event) => onSaveClick(event)}
                     className={`save-btn inline-flex h-12 flex-1 items-center justify-center overflow-hidden rounded-lg bg-accent px-5 text-sm font-medium text-accent-fg ${preparing || saveCount === 0 ? "pointer-events-none opacity-60" : ""}`}
                   >
@@ -991,6 +1020,7 @@ export function Clipkeep() {
           {history.length > 0 ? (
             <HistoryRow
               items={history}
+              justSavedId={justSavedId}
               onPick={(url) => void fetchPost(url, true)}
               onRemove={(id) => {
                 const next = readHistory().filter((item) => item.id !== id);
@@ -1130,11 +1160,13 @@ function Samples({ onPick }: { onPick: (url: string) => void }) {
 
 function HistoryRow({
   items,
+  justSavedId,
   onPick,
   onRemove,
   onClear,
 }: {
   items: HistoryItem[];
+  justSavedId: string | null;
   onPick: (url: string) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
@@ -1149,7 +1181,11 @@ function HistoryRow({
       </div>
       <ul className="mt-3 flex gap-3 overflow-x-auto pb-1">
         {items.map((item) => (
-          <li key={item.id} className="relative w-28 shrink-0">
+          <li
+            key={item.id}
+            className="recent-item relative w-28 shrink-0"
+            data-just-saved={item.id === justSavedId ? "true" : "false"}
+          >
             <button type="button" onClick={() => onPick(item.sourceUrl)} className="block w-full overflow-hidden rounded-lg bg-surface text-left shadow-[var(--shadow-border)]">
               <div className="flex aspect-[3/4] items-center justify-center bg-surface-2">
                 {item.thumbnail ? (
