@@ -1123,7 +1123,6 @@ function CapabilityOrbit() {
   return (
     <div className="hero-orbit mt-5">
       <div className="hero-orbit-card">
-        <p className="hero-orbit-prefix">that</p>
         <div className="hero-orbit-window" aria-hidden="true">
           <p key={index} className={`hero-orbit-line is-${phase}`}>
             {CAPABILITIES[index]}
