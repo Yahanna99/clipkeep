@@ -1,26 +1,29 @@
-@import url("https://fonts.googleapis.com/css2?family=Figtree:ital,wght@0,400;0,500;0,600;1,400&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,500&family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;0,9..144,700;1,9..144,500;1,9..144,600&display=swap");
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Figtree", "Segoe UI", system-ui, sans-serif;
+  --font-sans: "Plus Jakarta Sans", "Segoe UI", system-ui, sans-serif;
   --font-display: "Fraunces", "Times New Roman", serif;
-  --color-bg: #05070c;
-  --color-surface: #0c1220;
-  --color-surface-2: #121a2c;
-  --color-fg: #e8eef8;
-  --color-muted: #8b97ad;
-  --color-subtle: #737f96;
-  --color-accent: #3b82f6;
+  --color-bg: #02060f;
+  --color-surface: #0a1424;
+  --color-surface-2: #122038;
+  --color-fg: #f0f6ff;
+  --color-muted: #93a4c0;
+  --color-subtle: #6e819e;
+  --color-accent: #3d8bfd;
+  --color-accent-bright: #6babff;
   --color-accent-fg: #f4f8ff;
-  --color-border: #1c2a44;
-  --color-danger: #d4675a;
+  --color-border: #1a2f52;
+  --color-danger: #f07167;
   --color-success: #34d399;
-  --shadow-border: 0 0 0 1px color-mix(in oklab, var(--color-accent) 22%, transparent);
-  --shadow-border-hover: 0 0 0 1px color-mix(in oklab, var(--color-accent) 48%, transparent);
+  --shadow-border: 0 0 0 1px color-mix(in oklab, var(--color-accent) 28%, transparent);
+  --shadow-border-hover: 0 0 0 1px color-mix(in oklab, var(--color-accent-bright) 55%, transparent);
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
-  --motion-quick: 150ms;
-  --motion-pop: 620ms;
+  --ease-bounce: cubic-bezier(0.22, 1.75, 0.36, 1);
+  --motion-quick: 180ms;
+  --motion-pop: 680ms;
+  --motion-enter: 720ms;
 }
 
 @layer base {
@@ -34,34 +37,250 @@
     background: var(--color-bg);
     color: var(--color-fg);
   }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-accent) 45%, transparent);
+    color: var(--color-fg);
+  }
 }
 
-.hero-glow {
-  background: radial-gradient(
-    ellipse 80% 70% at 50% -10%,
-    color-mix(in oklab, var(--color-accent) 32%, transparent),
-    transparent 70%
-  );
+/* ——— Atmosphere ——— */
+
+.app-shell {
+  position: relative;
+  isolation: isolate;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  background:
+    radial-gradient(ellipse 90% 55% at 50% -18%, color-mix(in oklab, var(--color-accent) 38%, transparent), transparent 62%),
+    radial-gradient(ellipse 45% 40% at 92% 12%, color-mix(in oklab, var(--color-accent-bright) 16%, transparent), transparent 55%),
+    radial-gradient(ellipse 40% 35% at 6% 28%, color-mix(in oklab, #1e5bb8 18%, transparent), transparent 60%),
+    linear-gradient(180deg, #06101f 0%, var(--color-bg) 42%, #01040a 100%);
+  color: var(--color-fg);
 }
 
-.reveal {
-  animation: rise var(--motion-quick) var(--ease-out);
+.app-shell::before {
+  content: "";
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0.35;
+  background-image:
+    linear-gradient(color-mix(in oklab, var(--color-accent) 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklab, var(--color-accent) 7%, transparent) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: radial-gradient(ellipse 70% 55% at 50% 0%, black, transparent 72%);
 }
 
-@keyframes rise {
+.app-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.hero-orb {
+  pointer-events: none;
+  position: absolute;
+  border-radius: 999px;
+  filter: blur(40px);
+  opacity: 0.55;
+  animation: orb-drift 9s ease-in-out infinite alternate;
+}
+
+.hero-orb-a {
+  top: -4rem;
+  left: 50%;
+  width: 18rem;
+  height: 18rem;
+  translate: -50% 0;
+  background: radial-gradient(circle, color-mix(in oklab, var(--color-accent) 55%, transparent), transparent 70%);
+}
+
+.hero-orb-b {
+  top: 8rem;
+  right: -3rem;
+  width: 12rem;
+  height: 12rem;
+  background: radial-gradient(circle, color-mix(in oklab, var(--color-accent-bright) 40%, transparent), transparent 70%);
+  animation-delay: -3s;
+  animation-duration: 11s;
+}
+
+@keyframes orb-drift {
   from {
-    opacity: 0;
-    transform: translateY(6px);
+    transform: translate3d(0, 0, 0) scale(1);
   }
   to {
+    transform: translate3d(12px, 18px, 0) scale(1.08);
+  }
+}
+
+/* ——— Shared motion primitives ——— */
+
+.reveal {
+  animation: rise-bounce var(--motion-enter) var(--ease-spring) both;
+}
+
+.reveal-delay-1 {
+  animation-delay: 60ms;
+}
+
+.reveal-delay-2 {
+  animation-delay: 120ms;
+}
+
+.reveal-delay-3 {
+  animation-delay: 180ms;
+}
+
+.reveal-delay-4 {
+  animation-delay: 240ms;
+}
+
+.reveal-delay-5 {
+  animation-delay: 300ms;
+}
+
+@keyframes rise-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.96);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.02);
+  }
+  78% {
+    transform: translateY(2px) scale(0.995);
+  }
+  100% {
     opacity: 1;
     transform: none;
   }
 }
 
+.pressable {
+  transform: translateZ(0);
+  transition:
+    transform 360ms var(--ease-spring),
+    box-shadow 220ms var(--ease-out),
+    background-color 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    filter 180ms var(--ease-out),
+    opacity 180ms var(--ease-out);
+  will-change: transform;
+}
 
-/* Hero capability orbit — Clipkeep stays fixed; the card swaps what it does
-   with Muse-like stepped spring motion (pause, then ease out / spring in). */
+.pressable:hover:not(:disabled):not([aria-disabled="true"]) {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.pressable:active:not(:disabled):not([aria-disabled="true"]) {
+  transform: scale(0.94);
+  transition-duration: 80ms;
+}
+
+.chip {
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 999px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-muted);
+  background: color-mix(in oklab, var(--color-surface-2) 80%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 22%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 6%, transparent);
+}
+
+.chip-live {
+  color: var(--color-accent-bright);
+  background: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 42%, transparent),
+    0 8px 20px -12px color-mix(in oklab, var(--color-accent) 70%, transparent);
+  animation: chip-pop 560ms var(--ease-spring) both;
+}
+
+@keyframes chip-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.7);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.glass-panel {
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in oklab, var(--color-surface-2) 72%, transparent),
+      color-mix(in oklab, var(--color-surface) 92%, transparent) 48%,
+      color-mix(in oklab, var(--color-bg) 40%, var(--color-surface))
+    );
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 24%, transparent),
+    inset 0 1px 0 0 color-mix(in oklab, white 10%, transparent),
+    0 28px 56px -30px rgba(0, 0, 0, 0.72);
+}
+
+.mark-bounce {
+  animation: mark-in 780ms var(--ease-spring) both;
+  transform-origin: center;
+}
+
+@keyframes mark-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.55) rotate(-12deg);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.12) rotate(4deg);
+  }
+  78% {
+    transform: scale(0.94) rotate(-2deg);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.brand-word {
+  display: inline-block;
+  animation: brand-in 820ms var(--ease-spring) both;
+  animation-delay: 80ms;
+}
+
+@keyframes brand-in {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.92);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ——— Hero capability orbit ——— */
+
 .hero-orbit {
   max-width: 30rem;
 }
@@ -74,20 +293,42 @@
   min-height: 4.75rem;
   padding: 1.15rem 1.35rem;
   overflow: hidden;
-  border-radius: 1.25rem;
+  border-radius: 1.35rem;
   background:
     linear-gradient(
-      160deg,
-      color-mix(in oklab, var(--color-surface-2) 78%, transparent),
-      color-mix(in oklab, var(--color-surface) 88%, transparent) 48%,
-      color-mix(in oklab, var(--color-bg) 55%, var(--color-surface))
+      155deg,
+      color-mix(in oklab, var(--color-accent) 18%, var(--color-surface-2)),
+      color-mix(in oklab, var(--color-surface) 90%, transparent) 46%,
+      color-mix(in oklab, var(--color-bg) 50%, var(--color-surface))
     );
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   box-shadow:
-    0 0 0 1px color-mix(in oklab, var(--color-accent) 18%, transparent),
-    inset 0 1px 0 0 color-mix(in oklab, white 9%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 32%, transparent),
+    inset 0 1px 0 0 color-mix(in oklab, white 12%, transparent),
+    0 0 48px -12px color-mix(in oklab, var(--color-accent) 45%, transparent),
     0 28px 56px -30px rgba(0, 0, 0, 0.7);
+}
+
+.hero-orbit-card::before {
+  content: "";
+  position: absolute;
+  inset: auto -20% -55% -20%;
+  height: 70%;
+  background: radial-gradient(ellipse at center, color-mix(in oklab, var(--color-accent) 35%, transparent), transparent 70%);
+  pointer-events: none;
+  animation: orbit-glow 4.5s ease-in-out infinite alternate;
+}
+
+@keyframes orbit-glow {
+  from {
+    opacity: 0.45;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0.85;
+    transform: translateY(-8px);
+  }
 }
 
 .hero-orbit-window {
@@ -103,11 +344,12 @@
   margin: 0;
   font-family: var(--font-display);
   font-size: clamp(1.4rem, 3.6vw, 1.95rem);
-  font-weight: 500;
+  font-weight: 600;
   font-style: italic;
   letter-spacing: -0.03em;
   line-height: 1.18;
   color: var(--color-fg);
+  text-shadow: 0 0 24px color-mix(in oklab, var(--color-accent) 35%, transparent);
   transform-origin: left center;
   will-change: transform, opacity;
 }
@@ -118,56 +360,306 @@
 }
 
 .hero-orbit-line.is-enter {
-  animation: hero-orbit-enter 520ms var(--ease-spring) both;
+  animation: hero-orbit-enter 560ms var(--ease-spring) both;
 }
 
 .hero-orbit-line.is-exit {
-  animation: hero-orbit-exit 320ms var(--ease-out) both;
+  animation: hero-orbit-exit 300ms var(--ease-out) both;
 }
 
 @keyframes hero-orbit-enter {
   0% {
     opacity: 0;
-    transform: translateY(18px);
+    transform: translateY(22px) scale(0.96);
   }
   62% {
     opacity: 1;
-    transform: translateY(-3px);
+    transform: translateY(-5px) scale(1.03);
   }
   100% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes hero-orbit-exit {
   0% {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
   100% {
     opacity: 0;
-    transform: translateY(-14px);
+    transform: translateY(-16px) scale(0.97);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .hero-orbit-line.is-enter,
-  .hero-orbit-line.is-exit {
-    animation: none !important;
-  }
+/* ——— Composer / form ——— */
 
-  .hero-orbit-line {
-    opacity: 1 !important;
-    transform: none !important;
+.composer {
+  position: relative;
+  border-radius: 1.15rem;
+  padding: 0.5rem;
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--color-surface-2) 85%, transparent),
+      color-mix(in oklab, var(--color-surface) 94%, transparent)
+    );
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 26%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 8%, transparent),
+    0 24px 48px -28px rgba(0, 0, 0, 0.75);
+  transition:
+    box-shadow 280ms var(--ease-out),
+    transform 420ms var(--ease-spring);
+}
+
+.composer:focus-within {
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent-bright) 55%, transparent),
+    0 0 0 6px color-mix(in oklab, var(--color-accent) 16%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 10%, transparent),
+    0 28px 56px -24px color-mix(in oklab, var(--color-accent) 35%, transparent);
+  transform: translateY(-1px) scale(1.005);
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 3rem;
+  border-radius: 0.85rem;
+  padding-inline: 1.15rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-fg);
+  background: color-mix(in oklab, var(--color-surface-2) 88%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 22%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 6%, transparent);
+}
+
+.btn-accent {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  height: 3rem;
+  min-width: 7rem;
+  border-radius: 0.85rem;
+  padding-inline: 1.25rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-accent-fg);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, white 18%, var(--color-accent)), var(--color-accent) 55%, color-mix(in oklab, #1d4ed8 25%, var(--color-accent)));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, white 12%, transparent),
+    0 10px 28px -10px color-mix(in oklab, var(--color-accent) 75%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 28%, transparent);
+}
+
+.btn-accent:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, white 16%, transparent),
+    0 14px 32px -8px color-mix(in oklab, var(--color-accent) 85%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 32%, transparent);
+}
+
+.btn-accent:disabled {
+  opacity: 0.42;
+}
+
+.segment {
+  height: 2.5rem;
+  border-radius: 999px;
+  padding-inline: 0.9rem;
+  font-size: 0.875rem;
+  font-weight: 550;
+  color: var(--color-muted);
+  background: color-mix(in oklab, var(--color-surface-2) 90%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 14%, transparent);
+  transition:
+    transform 360ms var(--ease-spring),
+    background-color 180ms var(--ease-out),
+    color 180ms var(--ease-out),
+    box-shadow 220ms var(--ease-out);
+}
+
+.segment:hover {
+  transform: translateY(-1px) scale(1.03);
+  color: var(--color-fg);
+}
+
+.segment:active {
+  transform: scale(0.94);
+  transition-duration: 80ms;
+}
+
+.segment[data-active="true"] {
+  color: var(--color-accent-fg);
+  background:
+    linear-gradient(180deg, color-mix(in oklab, white 14%, var(--color-accent)), var(--color-accent));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, white 10%, transparent),
+    0 10px 22px -10px color-mix(in oklab, var(--color-accent) 70%, transparent);
+  animation: segment-pop 480ms var(--ease-spring) both;
+}
+
+@keyframes segment-pop {
+  0% {
+    transform: scale(0.92);
+  }
+  55% {
+    transform: scale(1.08);
+  }
+  100% {
+    transform: none;
   }
 }
 
-/* Save button — a fluid, springy press.
-   Pressing squishes the button down fast; releasing springs back *past* rest
-   for a liquid bounce. When the file finishes preparing the button pops in and
-   a soft sheen wells up from the bottom, so "Preparing" hands off to "Save
-   video/photo" with a bit of life instead of a hard cut. */
+/* ——— Result / how-to / recent ——— */
+
+.result-card {
+  overflow: hidden;
+  border-radius: 1.25rem;
+  padding: 0.75rem;
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in oklab, var(--color-surface-2) 78%, transparent),
+      color-mix(in oklab, var(--color-surface) 94%, transparent)
+    );
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 26%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 8%, transparent),
+    0 30px 60px -32px rgba(0, 0, 0, 0.8);
+}
+
+.howto-item {
+  display: flex;
+  gap: 0.85rem;
+  border-radius: 1.1rem;
+  padding: 1rem 1.05rem;
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in oklab, var(--color-surface-2) 70%, transparent),
+      color-mix(in oklab, var(--color-surface) 92%, transparent)
+    );
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 18%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 6%, transparent);
+  transition:
+    transform 420ms var(--ease-spring),
+    box-shadow 240ms var(--ease-out);
+}
+
+.howto-item:hover {
+  transform: translateY(-3px) scale(1.01);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 40%, transparent),
+    0 18px 36px -22px color-mix(in oklab, var(--color-accent) 45%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+}
+
+.howto-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+  border-radius: 0.75rem;
+  color: var(--color-accent-bright);
+  background: color-mix(in oklab, var(--color-accent) 16%, var(--color-surface-2));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 28%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 8%, transparent);
+}
+
+.recent-card {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 0.95rem;
+  text-align: left;
+  background: var(--color-surface);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 20%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 5%, transparent);
+  transition:
+    transform 400ms var(--ease-spring),
+    box-shadow 220ms var(--ease-out);
+}
+
+.recent-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--color-accent-bright) 45%, transparent),
+    0 16px 28px -16px color-mix(in oklab, var(--color-accent) 55%, transparent);
+}
+
+.recent-card:active {
+  transform: scale(0.95);
+  transition-duration: 80ms;
+}
+
+.photo-tile {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.85rem;
+  background: var(--color-surface-2);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--color-accent) 18%, transparent);
+  transition:
+    transform 380ms var(--ease-spring),
+    box-shadow 220ms var(--ease-out);
+}
+
+.photo-tile:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+.photo-tile[data-focused="true"] {
+  box-shadow:
+    0 0 0 2px color-mix(in oklab, var(--color-accent-bright) 70%, transparent),
+    0 12px 24px -14px color-mix(in oklab, var(--color-accent) 55%, transparent);
+  animation: tile-pop 460ms var(--ease-spring) both;
+}
+
+@keyframes tile-pop {
+  0% {
+    transform: scale(0.96);
+  }
+  55% {
+    transform: scale(1.04);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+.check-pop {
+  animation: check-bounce 480ms var(--ease-spring) both;
+}
+
+@keyframes check-bounce {
+  0% {
+    transform: scale(0.4);
+  }
+  55% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* Save button — springy press + ready pop + click bounce */
 .save-btn {
   position: relative;
   isolation: isolate;
@@ -177,10 +669,20 @@
     box-shadow 240ms var(--ease-out),
     filter 200ms var(--ease-out);
   will-change: transform;
+  background:
+    linear-gradient(180deg, color-mix(in oklab, white 18%, var(--color-accent)), var(--color-accent) 55%, color-mix(in oklab, #1d4ed8 25%, var(--color-accent)));
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, white 12%, transparent),
+    0 12px 30px -10px color-mix(in oklab, var(--color-accent) 75%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 28%, transparent);
 }
 
 .save-btn:not([aria-disabled="true"]):hover {
-  box-shadow: 0 6px 22px color-mix(in oklab, var(--color-accent) 42%, transparent);
+  filter: brightness(1.06);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, white 16%, transparent),
+    0 16px 36px -8px color-mix(in oklab, var(--color-accent) 85%, transparent),
+    inset 0 1px 0 color-mix(in oklab, white 32%, transparent);
 }
 
 .save-btn:active {
@@ -199,7 +701,7 @@
   z-index: -1;
   background: radial-gradient(
     60% 80% at 50% 100%,
-    color-mix(in oklab, white 40%, transparent),
+    color-mix(in oklab, white 42%, transparent),
     transparent 70%
   );
   opacity: 0;
@@ -207,9 +709,6 @@
   animation: liquid-sheen var(--motion-pop) var(--ease-out) both;
 }
 
-
-/* Extra bounce when the user actually saves — a punchier spring than the
-   ready-hand-off pop, so the click feels answered. */
 .save-btn[data-bounce="true"] {
   animation: save-bounce 720ms var(--ease-spring) both;
 }
@@ -219,16 +718,16 @@
     transform: scale(1);
   }
   18% {
-    transform: scale(0.9);
+    transform: scale(0.88);
   }
   42% {
-    transform: scale(1.12);
+    transform: scale(1.14);
   }
   62% {
-    transform: scale(0.96);
+    transform: scale(0.95);
   }
   78% {
-    transform: scale(1.05);
+    transform: scale(1.06);
   }
   90% {
     transform: scale(0.99);
@@ -238,24 +737,22 @@
   }
 }
 
-/* The label swaps between "Preparing" and "Save ...". Re-mounting it (via a
-   key) lets this tiny rise play so the text flows in rather than snapping. */
 .save-label {
-  animation: label-in 280ms var(--ease-out);
+  animation: label-in 300ms var(--ease-spring);
 }
 
 @keyframes liquid-pop {
   0% {
-    transform: scale(0.88);
+    transform: scale(0.86);
   }
   35% {
-    transform: scale(1.1);
+    transform: scale(1.12);
   }
   55% {
-    transform: scale(0.96);
+    transform: scale(0.95);
   }
   72% {
-    transform: scale(1.04);
+    transform: scale(1.05);
   }
   88% {
     transform: scale(0.99);
@@ -282,7 +779,7 @@
 @keyframes label-in {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(6px) scale(0.96);
   }
   to {
     opacity: 1;
@@ -290,27 +787,25 @@
   }
 }
 
-
-/* Recent row — bounce the freshly kept clip so saving lands with life. */
 .recent-item[data-just-saved="true"] {
-  animation: recent-bounce 780ms var(--ease-spring) both;
+  animation: recent-bounce 820ms var(--ease-spring) both;
   transform-origin: center bottom;
 }
 
 @keyframes recent-bounce {
   0% {
     opacity: 0;
-    transform: translateY(14px) scale(0.82);
+    transform: translateY(16px) scale(0.78);
   }
   40% {
     opacity: 1;
-    transform: translateY(-8px) scale(1.08);
+    transform: translateY(-10px) scale(1.1);
   }
   62% {
-    transform: translateY(3px) scale(0.96);
+    transform: translateY(4px) scale(0.95);
   }
   80% {
-    transform: translateY(-2px) scale(1.03);
+    transform: translateY(-3px) scale(1.04);
   }
   100% {
     opacity: 1;
@@ -318,46 +813,33 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .reveal,
-  .save-btn,
-  .save-btn[data-ready="true"],
-  .save-btn[data-ready="true"]::after,
-  .save-btn[data-bounce="true"],
-  .save-label,
-  .recent-item[data-just-saved="true"] {
-    animation: none !important;
-    transition: none !important;
-  }
-}
+/* ——— Toasts ——— */
 
-/* Toasts — the "saved" confirmation.
-   Matches the save button's language: a glassy card, a badge that springs in,
-   a tick that draws itself, and a soft ring that blooms out on arrival. */
 .clip-toast {
   position: relative !important;
   overflow: visible !important;
   gap: 12px !important;
   padding: 12px 14px !important;
-  border-radius: 14px !important;
-  border: 1px solid color-mix(in oklab, var(--color-accent) 26%, var(--color-border)) !important;
-  background: color-mix(in oklab, var(--color-surface-2) 88%, transparent) !important;
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+  border-radius: 16px !important;
+  border: 1px solid color-mix(in oklab, var(--color-accent) 32%, var(--color-border)) !important;
+  background: color-mix(in oklab, var(--color-surface-2) 90%, transparent) !important;
+  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px);
   box-shadow:
-    inset 0 1px 0 0 color-mix(in oklab, white 8%, transparent),
-    0 20px 48px -16px rgba(0, 0, 0, 0.72) !important;
-  animation: toast-bounce 640ms var(--ease-spring) both;
+    inset 0 1px 0 0 color-mix(in oklab, white 10%, transparent),
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 12%, transparent),
+    0 22px 48px -16px rgba(0, 0, 0, 0.72) !important;
+  animation: toast-bounce 680ms var(--ease-spring) both;
 }
 
 @keyframes toast-bounce {
   0% {
     opacity: 0;
-    transform: translateY(-12px) scale(0.86);
+    transform: translateY(-14px) scale(0.84);
   }
   45% {
     opacity: 1;
-    transform: translateY(4px) scale(1.06);
+    transform: translateY(5px) scale(1.07);
   }
   70% {
     transform: translateY(-2px) scale(0.98);
@@ -379,7 +861,7 @@
 
 .clip-toast-title {
   font-size: 13.5px !important;
-  font-weight: 600 !important;
+  font-weight: 650 !important;
   letter-spacing: -0.01em;
   color: var(--color-fg) !important;
 }
@@ -392,7 +874,7 @@
 }
 
 .clip-toast-icon {
-  animation: icon-pop 560ms var(--ease-spring) both;
+  animation: icon-pop 580ms var(--ease-spring) both;
 }
 
 .clip-toast-badge {
@@ -442,7 +924,7 @@
     opacity: 0.9;
   }
   100% {
-    box-shadow: 0 0 0 12px color-mix(in oklab, var(--color-accent) 0%, transparent);
+    box-shadow: 0 0 0 14px color-mix(in oklab, var(--color-accent) 0%, transparent);
     opacity: 0;
   }
 }
@@ -453,7 +935,7 @@
     opacity: 0;
   }
   40% {
-    transform: scale(1.22) rotate(5deg);
+    transform: scale(1.24) rotate(5deg);
     opacity: 1;
   }
   62% {
@@ -473,15 +955,74 @@
   }
 }
 
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+  background: var(--color-surface-2);
+}
+
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--color-accent) 18%, transparent),
+    transparent
+  );
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .hero-orb,
+  .hero-orbit-card::before,
+  .hero-orbit-line.is-enter,
+  .hero-orbit-line.is-exit,
+  .reveal,
+  .mark-bounce,
+  .brand-word,
+  .chip-live,
+  .segment[data-active="true"],
+  .photo-tile[data-focused="true"],
+  .check-pop,
+  .save-btn,
+  .save-btn[data-ready="true"],
+  .save-btn[data-ready="true"]::after,
+  .save-btn[data-bounce="true"],
+  .save-label,
+  .recent-item[data-just-saved="true"],
   .clip-toast,
   .clip-toast::after,
   .clip-toast-icon,
-  .clip-toast-tick path {
+  .clip-toast-tick path,
+  .skeleton-shimmer::after,
+  .pressable,
+  .howto-item,
+  .recent-card,
+  .composer,
+  .segment {
     animation: none !important;
+    transition: none !important;
+  }
+
+  .hero-orbit-line {
+    opacity: 1 !important;
+    transform: none !important;
   }
 
   .clip-toast-tick path {
     stroke-dashoffset: 0;
+  }
+
+  .app-shell::before {
+    opacity: 0.2;
   }
 }
