@@ -9,24 +9,14 @@ import type { ClipMedia, Platform, Variant } from "@/lib/clip/types";
 
 const HISTORY_KEY = "clipkeep.history.v1";
 
-const SAMPLES: { label: string; platform: Platform; url: string }[] = [
-  { label: "NASA on X", platform: "x", url: "https://x.com/NASA/status/2039473910987534599" },
-  {
-    label: "TikTok video",
-    platform: "tiktok",
-    url: "https://www.tiktok.com/@scout2015/video/6718335390845095173",
-  },
-  {
-    label: "Instagram reel",
-    platform: "instagram",
-    url: "https://www.instagram.com/reel/DElF5QjSGd2/",
-  },
-  {
-    label: "TikTok photos",
-    platform: "tiktok",
-    url: "https://www.tiktok.com/@mens.guidance/photo/7467226363544554770",
-  },
-];
+const CAPABILITIES = [
+  "saves Instagram reels",
+  "keeps TikToks watermark-free",
+  "grabs videos from X",
+  "pulls every carousel still",
+  "downloads original quality",
+  "leaves the watermark behind",
+] as const;
 
 type HistoryItem = {
   id: string;
@@ -750,11 +740,27 @@ export function Clipkeep() {
         <main className="flex flex-1 flex-col">
           <section className="mt-10 sm:mt-14">
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-subtle">Instagram · TikTok · X</p>
-            <h1 className="font-display mt-3 max-w-[14ch] text-4xl font-medium leading-[1.1] tracking-[-0.03em] sm:text-5xl">
-              Save the clip. Leave the watermark.
+            <h1 className="font-display mt-3 text-5xl font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl">
+              Clipkeep
             </h1>
-            <p className="mt-4 max-w-md text-base leading-relaxed text-muted">
-              Paste a public post. Save the video, one photo, or every still in a gallery — original quality. TikTok without the logo.
+            <div className="hero-orbit mt-5" aria-hidden="true">
+              <div className="hero-orbit-card">
+                <div className="hero-orbit-window">
+                  <div className="hero-orbit-track">
+                    {[...CAPABILITIES, ...CAPABILITIES].map((line, index) => (
+                      <p key={`${line}-${index}`} className="hero-orbit-line">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            <p className="sr-only">
+              Clipkeep saves Instagram reels, keeps TikToks watermark-free, grabs videos from X, pulls every carousel still, and downloads original quality.
+            </p>
+            <p className="mt-5 max-w-md text-base leading-relaxed text-muted">
+              Paste a public post. Save the video, one photo, or every still in a gallery — original quality.
             </p>
             <form
               className="mt-8"
@@ -1016,7 +1022,6 @@ export function Clipkeep() {
           ) : null}
 
           {status === "idle" ? <HowTo /> : null}
-          <Samples onPick={(url) => void fetchPost(url, true)} />
           {history.length > 0 ? (
             <HistoryRow
               items={history}
@@ -1136,25 +1141,6 @@ function HowTo() {
         ))}
       </ul>
     </section>
-  );
-}
-
-function Samples({ onPick }: { onPick: (url: string) => void }) {
-  return (
-    <div className="mt-8 flex flex-wrap items-center gap-2 text-sm">
-      <span className="text-subtle">Try a sample</span>
-      {SAMPLES.map((sample) => (
-        <button
-          key={sample.url}
-          type="button"
-          onClick={() => onPick(sample.url)}
-          className="inline-flex h-10 items-center gap-1.5 rounded-full px-3 text-muted shadow-[var(--shadow-border)] hover:text-fg"
-        >
-          <PlatformIcon platform={sample.platform} className="size-3.5" />
-          {sample.label}
-        </button>
-      ))}
-    </div>
   );
 }
 

@@ -59,6 +59,114 @@
   }
 }
 
+
+/* Hero capability orbit — title stays still; the card cycles what Clipkeep does,
+   muse-style, as a seamless vertical marquee inside a glassy card. */
+.hero-orbit {
+  max-width: 28rem;
+}
+
+.hero-orbit-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in oklab, var(--color-surface-2) 92%, white),
+      var(--color-surface) 55%,
+      color-mix(in oklab, var(--color-bg) 70%, var(--color-surface))
+    );
+  box-shadow:
+    var(--shadow-border),
+    inset 0 1px 0 0 color-mix(in oklab, white 7%, transparent),
+    0 24px 48px -28px rgba(0, 0, 0, 0.65);
+}
+
+.hero-orbit-card::before,
+.hero-orbit-card::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 2.1rem;
+  pointer-events: none;
+}
+
+.hero-orbit-card::before {
+  top: 0;
+  background: linear-gradient(to bottom, var(--color-surface), transparent);
+}
+
+.hero-orbit-card::after {
+  bottom: 0;
+  background: linear-gradient(to top, var(--color-surface), transparent);
+}
+
+.hero-orbit-window {
+  height: 4.75rem;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
+}
+
+.hero-orbit-track {
+  display: flex;
+  flex-direction: column;
+  animation: hero-orbit-scroll 22s linear infinite;
+  will-change: transform;
+}
+
+.hero-orbit-line {
+  display: flex;
+  align-items: center;
+  min-height: 4.75rem;
+  padding: 0 1.25rem;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 3.4vw, 1.85rem);
+  font-weight: 500;
+  font-style: italic;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  color: var(--color-fg);
+}
+
+@keyframes hero-orbit-scroll {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    /* Half the duplicated list — seamless loop */
+    transform: translateY(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-orbit-track {
+    animation: none !important;
+    transform: none !important;
+  }
+
+  .hero-orbit-window {
+    height: auto;
+    mask-image: none;
+  }
+
+  .hero-orbit-line:not(:first-child) {
+    display: none;
+  }
+
+  .hero-orbit-line {
+    min-height: 0;
+    padding-block: 1.1rem;
+  }
+
+  .hero-orbit-card::before,
+  .hero-orbit-card::after {
+    display: none;
+  }
+}
+
 /* Save button — a fluid, springy press.
    Pressing squishes the button down fast; releasing springs back *past* rest
    for a liquid bounce. When the file finishes preparing the button pops in and
