@@ -60,110 +60,116 @@
 }
 
 
-/* Hero capability orbit — title stays still; the card cycles what Clipkeep does,
-   muse-style, as a seamless vertical marquee inside a glassy card. */
+/* Hero capability orbit — Clipkeep stays fixed; the card swaps what it does
+   with Muse-like stepped spring motion (pause, then ease out / spring in). */
 .hero-orbit {
-  max-width: 28rem;
+  max-width: 30rem;
 }
 
 .hero-orbit-card {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+  min-height: 5.5rem;
+  padding: 1.05rem 1.35rem 1.15rem;
   overflow: hidden;
-  border-radius: 1rem;
+  border-radius: 1.25rem;
   background:
     linear-gradient(
-      165deg,
-      color-mix(in oklab, var(--color-surface-2) 92%, white),
-      var(--color-surface) 55%,
-      color-mix(in oklab, var(--color-bg) 70%, var(--color-surface))
+      160deg,
+      color-mix(in oklab, var(--color-surface-2) 78%, transparent),
+      color-mix(in oklab, var(--color-surface) 88%, transparent) 48%,
+      color-mix(in oklab, var(--color-bg) 55%, var(--color-surface))
     );
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
   box-shadow:
-    var(--shadow-border),
-    inset 0 1px 0 0 color-mix(in oklab, white 7%, transparent),
-    0 24px 48px -28px rgba(0, 0, 0, 0.65);
+    0 0 0 1px color-mix(in oklab, var(--color-accent) 18%, transparent),
+    inset 0 1px 0 0 color-mix(in oklab, white 9%, transparent),
+    0 28px 56px -30px rgba(0, 0, 0, 0.7);
 }
 
-.hero-orbit-card::before,
-.hero-orbit-card::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 2;
-  height: 2.1rem;
-  pointer-events: none;
-}
-
-.hero-orbit-card::before {
-  top: 0;
-  background: linear-gradient(to bottom, var(--color-surface), transparent);
-}
-
-.hero-orbit-card::after {
-  bottom: 0;
-  background: linear-gradient(to top, var(--color-surface), transparent);
+.hero-orbit-prefix {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-subtle);
 }
 
 .hero-orbit-window {
-  height: 4.75rem;
+  position: relative;
+  display: grid;
+  align-items: center;
+  min-height: 2.6rem;
   overflow: hidden;
-  mask-image: linear-gradient(to bottom, transparent, #000 22%, #000 78%, transparent);
-}
-
-.hero-orbit-track {
-  display: flex;
-  flex-direction: column;
-  animation: hero-orbit-scroll 22s linear infinite;
-  will-change: transform;
 }
 
 .hero-orbit-line {
-  display: flex;
-  align-items: center;
-  min-height: 4.75rem;
-  padding: 0 1.25rem;
+  grid-area: 1 / 1;
+  margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.35rem, 3.4vw, 1.85rem);
+  font-size: clamp(1.4rem, 3.6vw, 1.95rem);
   font-weight: 500;
   font-style: italic;
   letter-spacing: -0.03em;
-  line-height: 1.15;
+  line-height: 1.18;
   color: var(--color-fg);
+  transform-origin: left center;
+  will-change: transform, opacity;
 }
 
-@keyframes hero-orbit-scroll {
-  from {
+.hero-orbit-line.is-idle {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.hero-orbit-line.is-enter {
+  animation: hero-orbit-enter 520ms var(--ease-spring) both;
+}
+
+.hero-orbit-line.is-exit {
+  animation: hero-orbit-exit 320ms var(--ease-out) both;
+}
+
+@keyframes hero-orbit-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  62% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+  100% {
+    opacity: 1;
     transform: translateY(0);
   }
-  to {
-    /* Half the duplicated list — seamless loop */
-    transform: translateY(-50%);
+}
+
+@keyframes hero-orbit-exit {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-14px);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .hero-orbit-track {
+  .hero-orbit-line.is-enter,
+  .hero-orbit-line.is-exit {
     animation: none !important;
-    transform: none !important;
-  }
-
-  .hero-orbit-window {
-    height: auto;
-    mask-image: none;
-  }
-
-  .hero-orbit-line:not(:first-child) {
-    display: none;
   }
 
   .hero-orbit-line {
-    min-height: 0;
-    padding-block: 1.1rem;
-  }
-
-  .hero-orbit-card::before,
-  .hero-orbit-card::after {
-    display: none;
+    opacity: 1 !important;
+    transform: none !important;
   }
 }
 

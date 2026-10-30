@@ -743,19 +743,7 @@ export function Clipkeep() {
             <h1 className="font-display mt-3 text-5xl font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl">
               Clipkeep
             </h1>
-            <div className="hero-orbit mt-5" aria-hidden="true">
-              <div className="hero-orbit-card">
-                <div className="hero-orbit-window">
-                  <div className="hero-orbit-track">
-                    {[...CAPABILITIES, ...CAPABILITIES].map((line, index) => (
-                      <p key={`${line}-${index}`} className="hero-orbit-line">
-                        {line}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <CapabilityOrbit />
             <p className="sr-only">
               Clipkeep saves Instagram reels, keeps TikToks watermark-free, grabs videos from X, pulls every carousel still, and downloads original quality.
             </p>
@@ -1102,6 +1090,46 @@ function PhotoGrid({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+
+function CapabilityOrbit() {
+  const [index, setIndex] = useState(0);
+  const [phase, setPhase] = useState<"enter" | "idle" | "exit">("idle");
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let exitTimer = 0;
+    let enterTimer = 0;
+    const cycle = window.setInterval(() => {
+      setPhase("exit");
+      exitTimer = window.setTimeout(() => {
+        setIndex((value) => (value + 1) % CAPABILITIES.length);
+        setPhase("enter");
+        enterTimer = window.setTimeout(() => setPhase("idle"), 520);
+      }, 320);
+    }, 2800);
+
+    return () => {
+      window.clearInterval(cycle);
+      window.clearTimeout(exitTimer);
+      window.clearTimeout(enterTimer);
+    };
+  }, []);
+
+  return (
+    <div className="hero-orbit mt-5">
+      <div className="hero-orbit-card">
+        <p className="hero-orbit-prefix">that</p>
+        <div className="hero-orbit-window" aria-hidden="true">
+          <p key={index} className={`hero-orbit-line is-${phase}`}>
+            {CAPABILITIES[index]}
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
