@@ -16,7 +16,7 @@ export const Route = createRootRoute({
         content:
           "Save public photos and videos from Instagram, TikTok, and X. TikTok without the watermark.",
       },
-      { name: "theme-color", content: "#05070c" },
+      { name: "theme-color", content: "#02060f" },
     ],
     links: [
       { rel: "icon", type: "image/svg+xml", href: "/favicon.svg" },

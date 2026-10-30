@@ -369,12 +369,25 @@ function ToastBadge({ tone }: { tone: ToastTone }) {
   );
 }
 
-function Mark({ className = "size-7" }: { className?: string }) {
+function Mark({ className = "size-8" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 100 100" className={`text-accent ${className}`} aria-hidden="true">
-      <rect width="100" height="100" rx="22" fill="currentColor" opacity="0.08" />
-      <rect x="26" y="28" width="48" height="44" rx="4" fill="none" stroke="currentColor" strokeWidth="6" />
-      <path d="M38 44 L50 58 L62 44" fill="none" stroke="currentColor" strokeWidth="7" strokeLinecap="square" strokeLinejoin="miter" />
+    <svg viewBox="0 0 100 100" className={`text-accent mark-bounce ${className}`} aria-hidden="true">
+      <defs>
+        <linearGradient id="mark-glow" x1="20" y1="10" x2="80" y2="90" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#6babff" />
+          <stop offset="1" stopColor="#3d8bfd" />
+        </linearGradient>
+      </defs>
+      <rect width="100" height="100" rx="26" fill="url(#mark-glow)" opacity="0.16" />
+      <rect x="26" y="28" width="48" height="44" rx="8" fill="none" stroke="url(#mark-glow)" strokeWidth="6" />
+      <path
+        d="M38 44 L50 58 L62 44"
+        fill="none"
+        stroke="url(#mark-glow)"
+        strokeWidth="7"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
@@ -706,7 +719,7 @@ export function Clipkeep() {
   }
 
   return (
-    <div className="relative min-h-dvh overflow-x-hidden bg-bg text-fg">
+    <div className="app-shell">
       <Toaster
         theme="dark"
         position="top-center"
@@ -728,30 +741,35 @@ export function Clipkeep() {
           },
         }}
       />
-      <div aria-hidden="true" className="hero-glow pointer-events-none absolute inset-x-0 top-0 h-64" />
+      <div aria-hidden="true" className="hero-orb hero-orb-a" />
+      <div aria-hidden="true" className="hero-orb hero-orb-b" />
       <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 pb-16 pt-6 sm:px-6">
         <header className="flex items-center justify-between">
           <span className="inline-flex items-center gap-2.5">
             <Mark />
-            <span className="font-display text-xl italic tracking-tight">Clipkeep</span>
+            <span className="brand-word font-display text-xl font-semibold italic tracking-tight">Clipkeep</span>
           </span>
-          <p className="hidden text-xs text-muted sm:block">Photos and videos · no watermark</p>
+          <p className="chip hidden items-center sm:inline-flex">Photos · videos · no watermark</p>
         </header>
         <main className="flex flex-1 flex-col">
           <section className="mt-10 sm:mt-14">
-            <p className="text-xs font-medium uppercase tracking-[0.18em] text-subtle">Instagram · TikTok · X</p>
-            <h1 className="font-display mt-3 text-5xl font-medium leading-[1.05] tracking-[-0.035em] sm:text-6xl">
+            <p className="reveal text-xs font-semibold uppercase tracking-[0.22em] text-accent">
+              Instagram · TikTok · X
+            </p>
+            <h1 className="reveal reveal-delay-1 font-display mt-3 text-5xl font-semibold leading-[1.02] tracking-[-0.04em] sm:text-6xl">
               Clipkeep
             </h1>
-            <CapabilityOrbit />
+            <div className="reveal reveal-delay-2">
+              <CapabilityOrbit />
+            </div>
             <p className="sr-only">
               Clipkeep saves Instagram reels, keeps TikToks watermark-free, grabs videos from X, pulls every carousel still, and downloads original quality.
             </p>
-            <p className="mt-5 max-w-md text-base leading-relaxed text-muted">
-              Paste a public post. Save the video, one photo, or every still in a gallery — original quality.
+            <p className="reveal reveal-delay-3 mt-5 max-w-md text-base leading-relaxed text-muted">
+              Paste a public post. Save the video, one photo, or every still — original quality, watermark-free.
             </p>
             <form
-              className="mt-8"
+              className="reveal reveal-delay-4 mt-8"
               onSubmit={(event) => {
                 event.preventDefault();
                 void fetchPost(inputRef.current?.value || draft, true);
@@ -760,7 +778,7 @@ export function Clipkeep() {
               <label htmlFor="clip-url" className="sr-only">
                 Post link
               </label>
-              <div className="rounded-xl bg-surface p-2 shadow-[var(--shadow-border)]">
+              <div className="composer">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <div className="relative min-w-0 flex-1">
                     <input
@@ -774,13 +792,13 @@ export function Clipkeep() {
                       enterKeyHint="go"
                       autoComplete="off"
                       onChange={(event) => onInput(event.currentTarget.value)}
-                      className="h-12 w-full rounded-lg bg-transparent px-4 pr-10 text-base text-fg outline-none placeholder:text-subtle"
+                      className="h-12 w-full rounded-xl bg-transparent px-4 pr-10 text-base text-fg outline-none placeholder:text-subtle"
                     />
                     {draft ? (
                       <button
                         type="button"
                         aria-label="Clear link"
-                        className="absolute right-2 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-subtle hover:text-fg"
+                        className="pressable absolute right-2 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-lg text-subtle hover:text-fg"
                         onClick={() => {
                           requestId.current += 1;
                           setDraft("");
@@ -803,7 +821,7 @@ export function Clipkeep() {
                       type="button"
                       aria-label="Paste from clipboard"
                       onClick={() => void pasteLink()}
-                      className="inline-flex h-12 items-center gap-2 rounded-lg bg-surface px-5 text-sm font-medium text-fg shadow-[var(--shadow-border)]"
+                      className="btn-ghost pressable"
                     >
                       <ClipboardPaste className="size-4" />
                       Paste
@@ -811,7 +829,7 @@ export function Clipkeep() {
                     <button
                       type="submit"
                       disabled={status === "loading"}
-                      className="inline-flex h-12 min-w-28 flex-1 items-center justify-center gap-2 rounded-lg bg-accent px-5 text-sm font-medium text-accent-fg disabled:opacity-40 sm:flex-none"
+                      className="btn-accent pressable flex-1 sm:flex-none"
                     >
                       {status === "loading" ? (
                         <>
@@ -825,40 +843,39 @@ export function Clipkeep() {
                   </div>
                 </div>
               </div>
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-subtle">
+              <div className="mt-3.5 flex flex-wrap items-center gap-2 text-xs text-subtle">
                 {detected ? (
-                  <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-muted shadow-[var(--shadow-border)]">
+                  <span className="chip chip-live inline-flex items-center">
                     <PlatformIcon platform={detected} className="size-3.5" />
                     {platformName(detected)}
                   </span>
                 ) : (
-                  <span>Public posts only</span>
+                  <span className="chip inline-flex items-center">Public posts only</span>
                 )}
-                <span>·</span>
-                <span>Tap Paste, or paste once into the field</span>
+                <span className="text-subtle/80">Tap Paste, or paste once into the field</span>
               </div>
             </form>
           </section>
 
           {status === "loading" ? (
-            <div className="reveal mt-8 overflow-hidden rounded-xl bg-surface p-3 shadow-[var(--shadow-border)]">
-              <div className="aspect-[9/16] max-h-[420px] w-full animate-pulse rounded-lg bg-surface-2 sm:aspect-video" />
+            <div className="reveal result-card mt-8">
+              <div className="skeleton-shimmer aspect-[9/16] max-h-[420px] w-full rounded-xl sm:aspect-video" />
               <div className="mt-4 space-y-2 px-1 pb-2">
-                <div className="h-4 w-2/3 animate-pulse rounded bg-surface-2" />
-                <div className="h-3 w-1/3 animate-pulse rounded bg-surface-2" />
+                <div className="skeleton-shimmer h-4 w-2/3 rounded-md" />
+                <div className="skeleton-shimmer h-3 w-1/3 rounded-md" />
               </div>
             </div>
           ) : null}
 
           {status === "error" && error ? (
-            <p role="alert" className="reveal mt-6 rounded-xl bg-surface px-4 py-3 text-sm leading-relaxed text-danger shadow-[var(--shadow-border)]">
+            <p role="alert" className="reveal glass-panel mt-6 px-4 py-3 text-sm leading-relaxed text-danger">
               {error}
             </p>
           ) : null}
 
           {status === "ready" && media && selected ? (
-            <article className="reveal mt-8 overflow-hidden rounded-xl bg-surface p-3 shadow-[var(--shadow-border)]">
-              <div className="overflow-hidden rounded-lg bg-bg">
+            <article className="reveal result-card mt-8">
+              <div className="overflow-hidden rounded-xl bg-bg">
                 {selected.kind === "video" ? (
                   <video
                     key={selected.id}
@@ -884,15 +901,21 @@ export function Clipkeep() {
               </div>
               <div className="px-2 pb-2 pt-4">
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                  <PlatformIcon platform={media.platform} />
-                  <span>{platformName(media.platform)}</span>
+                  <span className="chip inline-flex items-center">
+                    <PlatformIcon platform={media.platform} />
+                    {platformName(media.platform)}
+                  </span>
                   {media.platform === "tiktok" && (selected.noWatermark || photos.length > 0) ? (
-                    <span className="rounded-full px-2 py-0.5 uppercase tracking-wide shadow-[var(--shadow-border)]">No watermark</span>
+                    <span className="chip chip-live inline-flex items-center uppercase tracking-wide">No watermark</span>
                   ) : null}
-                  {photos.length > 1 ? <span className="tabular-nums">{photos.length} photos</span> : null}
-                  {formatDuration(media.duration) ? <span className="tabular-nums">{formatDuration(media.duration)}</span> : null}
+                  {photos.length > 1 ? (
+                    <span className="chip inline-flex items-center tabular-nums">{photos.length} photos</span>
+                  ) : null}
+                  {formatDuration(media.duration) ? (
+                    <span className="chip inline-flex items-center tabular-nums">{formatDuration(media.duration)}</span>
+                  ) : null}
                 </div>
-                <h2 className="mt-1 truncate font-display text-xl font-medium tracking-tight">{media.title}</h2>
+                <h2 className="mt-2 truncate font-display text-xl font-semibold tracking-tight">{media.title}</h2>
                 <p className="mt-0.5 text-sm text-muted">
                   {media.author}
                   {media.authorHandle ? ` · @${media.authorHandle}` : ""}
@@ -905,7 +928,8 @@ export function Clipkeep() {
                       <button
                         type="button"
                         onClick={() => setSelectedId(photos[0].id)}
-                        className={`h-10 rounded-full px-3.5 text-sm ${selected.kind === "image" ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted"}`}
+                        data-active={selected.kind === "image" ? "true" : "false"}
+                        className="segment"
                       >
                         {photos.length === 1 ? "Photo" : `${photos.length} photos`}
                       </button>
@@ -915,7 +939,8 @@ export function Clipkeep() {
                         key={group[0].id}
                         type="button"
                         onClick={() => setSelectedId(group[0].id)}
-                        className={`h-10 rounded-full px-3.5 text-sm ${selectedGroup === group ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted"}`}
+                        data-active={selectedGroup === group ? "true" : "false"}
+                        className="segment"
                       >
                         {groups.length > 1 ? `Video ${index + 1}` : "Video"}
                       </button>
@@ -945,7 +970,8 @@ export function Clipkeep() {
                         key={variant.id}
                         type="button"
                         onClick={() => setSelectedId(variant.id)}
-                        className={`h-10 rounded-full px-3.5 text-sm ${variant.id === selected.id ? "bg-accent text-accent-fg" : "bg-surface-2 text-muted"}`}
+                        data-active={variant.id === selected.id ? "true" : "false"}
+                        className="segment"
                       >
                         {variant.label}
                       </button>
@@ -960,7 +986,8 @@ export function Clipkeep() {
                         key={variant.id}
                         type="button"
                         onClick={() => setSelectedId(variant.id)}
-                        className={`h-10 rounded-full px-3.5 text-sm shadow-[var(--shadow-border)] ${variant.id === selected.id ? "bg-accent text-accent-fg" : "text-muted"}`}
+                        data-active={variant.id === selected.id ? "true" : "false"}
+                        className="segment"
                       >
                         Audio
                       </button>
@@ -976,7 +1003,7 @@ export function Clipkeep() {
                     data-ready={ready ? "true" : "false"}
                     data-bounce={saveBounce ? "true" : "false"}
                     onClick={(event) => onSaveClick(event)}
-                    className={`save-btn inline-flex h-12 flex-1 items-center justify-center overflow-hidden rounded-lg bg-accent px-5 text-sm font-medium text-accent-fg ${preparing || saveCount === 0 ? "pointer-events-none opacity-60" : ""}`}
+                    className={`save-btn inline-flex h-12 flex-1 items-center justify-center overflow-hidden rounded-xl px-5 text-sm font-bold text-accent-fg ${preparing || saveCount === 0 ? "pointer-events-none opacity-60" : ""}`}
                   >
                     <span
                       key={preparing && !ready ? "preparing" : "ready"}
@@ -990,7 +1017,7 @@ export function Clipkeep() {
                     href={proxyUrl(selected.url, downloadName)}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex h-12 flex-1 items-center justify-center gap-2 rounded-lg bg-surface px-5 text-sm font-medium text-fg shadow-[var(--shadow-border)] sm:flex-none"
+                    className="btn-ghost pressable h-12 flex-1 sm:flex-none"
                   >
                     <ExternalLink className="size-4" />
                     Open file
@@ -1027,7 +1054,7 @@ export function Clipkeep() {
             />
           ) : null}
         </main>
-        <footer className="mt-12 text-xs leading-relaxed text-subtle">For personal copies of public posts. Respect creators.</footer>
+        <footer className="mt-14 text-xs leading-relaxed text-subtle">For personal copies of public posts. Respect creators.</footer>
       </div>
     </div>
   );
@@ -1072,7 +1099,7 @@ function PhotoGrid({
           const on = picked.includes(photo.id);
           const number = photo.index ?? index + 1;
           return (
-            <li key={photo.id} className={`relative overflow-hidden rounded-lg bg-surface-2 ${photo.id === focusedId ? "shadow-[var(--shadow-border-hover)]" : "shadow-[var(--shadow-border)]"}`}>
+            <li key={photo.id} className="photo-tile" data-focused={photo.id === focusedId ? "true" : "false"}>
               <button type="button" className="block aspect-[3/4] w-full" onClick={() => onFocus(photo.id)} aria-label={`View photo ${number}`}>
                 <img src={proxyUrl(photo.url, `photo-${number}.jpg`)} alt="" className="size-full object-cover" />
               </button>
@@ -1081,9 +1108,9 @@ function PhotoGrid({
                 aria-pressed={on}
                 aria-label={on ? `Deselect photo ${number}` : `Select photo ${number}`}
                 onClick={() => onToggle(photo.id)}
-                className={`absolute right-1 top-1 flex size-10 items-center justify-center rounded-full ${on ? "bg-accent text-accent-fg" : "bg-bg/80 text-fg"}`}
+                className={`pressable absolute right-1 top-1 flex size-10 items-center justify-center rounded-full ${on ? "bg-accent text-accent-fg" : "bg-bg/80 text-fg"}`}
               >
-                {on ? <Check className="size-4" /> : null}
+                {on ? <Check className="check-pop size-4" /> : null}
               </button>
               <span className="pointer-events-none absolute bottom-1 left-1 rounded-full bg-bg/80 px-2 py-0.5 text-xs tabular-nums">{number}</span>
             </li>
@@ -1153,15 +1180,18 @@ function HowTo() {
   ];
   return (
     <section className="mt-10">
-      <h2 className="text-sm font-medium text-muted">How to copy a link</h2>
+      <h2 className="text-sm font-semibold text-muted">How to copy a link</h2>
       <ul className="mt-3 grid gap-3">
-        {steps.map((step) => (
-          <li key={step.platform} className="flex gap-3 rounded-xl bg-surface px-4 py-4 shadow-[var(--shadow-border)]">
-            <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-md bg-surface-2">
+        {steps.map((step, index) => (
+          <li
+            key={step.platform}
+            className={`howto-item reveal reveal-delay-${Math.min(index + 1, 5)}`}
+          >
+            <span className="howto-icon">
               <PlatformIcon platform={step.platform} />
             </span>
             <div>
-              <p className="text-sm font-medium">{step.title}</p>
+              <p className="text-sm font-semibold tracking-tight">{step.title}</p>
               <p className="mt-1 text-sm leading-relaxed text-muted">{step.body}</p>
             </div>
           </li>
@@ -1187,8 +1217,8 @@ function HistoryRow({
   return (
     <section className="mt-12">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-sm font-medium text-muted">Recent</h2>
-        <button type="button" onClick={onClear} className="h-10 px-1 text-xs text-subtle hover:text-fg">
+        <h2 className="text-sm font-semibold text-muted">Recent</h2>
+        <button type="button" onClick={onClear} className="pressable h-10 px-2 text-xs font-medium text-subtle hover:text-fg">
           Clear
         </button>
       </div>
@@ -1199,7 +1229,7 @@ function HistoryRow({
             className="recent-item relative w-28 shrink-0"
             data-just-saved={item.id === justSavedId ? "true" : "false"}
           >
-            <button type="button" onClick={() => onPick(item.sourceUrl)} className="block w-full overflow-hidden rounded-lg bg-surface text-left shadow-[var(--shadow-border)]">
+            <button type="button" onClick={() => onPick(item.sourceUrl)} className="recent-card">
               <div className="flex aspect-[3/4] items-center justify-center bg-surface-2">
                 {item.thumbnail ? (
                   <img src={proxyUrl(item.thumbnail, "thumb.jpg")} alt="" className="size-full object-cover" />
@@ -1207,14 +1237,14 @@ function HistoryRow({
                   <PlatformIcon platform={item.platform} className="size-5 text-subtle" />
                 )}
               </div>
-              <p className="truncate px-2 pt-2 text-xs">{item.title}</p>
+              <p className="truncate px-2 pt-2 text-xs font-medium">{item.title}</p>
               <p className="truncate px-2 pb-2 text-[10px] text-subtle">{item.author}</p>
             </button>
             <button
               type="button"
               aria-label={`Remove ${item.title} from recent`}
               onClick={() => onRemove(item.id)}
-              className="absolute right-1 top-1 flex size-9 items-center justify-center rounded-full bg-bg/80"
+              className="pressable absolute right-1 top-1 flex size-9 items-center justify-center rounded-full bg-bg/85"
             >
               <X className="size-3" />
             </button>
