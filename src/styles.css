@@ -235,22 +235,125 @@
     0 28px 56px -30px rgba(0, 0, 0, 0.72);
 }
 
-.mark-bounce {
-  animation: mark-in 780ms var(--ease-spring) both;
+/* ——— Brand lockup: logo + single Clipkeep title ——— */
+
+.brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.mark-wrap {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  animation: mark-in 820ms var(--ease-spring) both;
+}
+
+.mark-svg {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  animation: mark-float 2.8s ease-in-out infinite;
+  transform-origin: center;
+}
+
+.mark-arrow {
+  transform-origin: 50px 51px;
+  animation: mark-arrow-bob 1.6s var(--ease-spring) infinite;
+}
+
+.mark-ring {
+  position: absolute;
+  inset: -18%;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in oklab, var(--color-accent-bright) 0%, transparent) 40deg,
+    var(--color-accent-bright) 95deg,
+    color-mix(in oklab, var(--color-accent) 80%, white) 130deg,
+    transparent 180deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  animation: spin-glow 3.2s linear infinite;
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+.brand-title {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.55rem 1.1rem;
+  isolation: isolate;
+}
+
+.brand-title-glow {
+  position: absolute;
+  inset: -18% -10%;
+  z-index: 0;
+  border-radius: 999px;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    transparent 40deg,
+    color-mix(in oklab, var(--color-accent) 35%, transparent) 80deg,
+    var(--color-accent-bright) 115deg,
+    #dbeafe 140deg,
+    var(--color-accent) 170deg,
+    transparent 210deg,
+    transparent 360deg
+  );
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 5px), #000 calc(100% - 2px));
+  animation: spin-glow 3.6s linear infinite;
+  filter: drop-shadow(0 0 14px color-mix(in oklab, var(--color-accent-bright) 70%, transparent));
+  pointer-events: none;
+}
+
+.brand-title-glow::after {
+  content: "";
+  position: absolute;
+  inset: 18%;
+  border-radius: inherit;
+  background: radial-gradient(
+    ellipse at center,
+    color-mix(in oklab, var(--color-accent) 22%, transparent),
+    transparent 70%
+  );
+  animation: brand-halo 2.4s ease-in-out infinite alternate;
+  z-index: -1;
+}
+
+.brand-title-text {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  color: var(--color-fg);
+  text-shadow: 0 0 28px color-mix(in oklab, var(--color-accent) 35%, transparent);
+  animation:
+    brand-in 860ms var(--ease-spring) both,
+    brand-breathe 3.2s ease-in-out 900ms infinite;
   transform-origin: center;
 }
 
 @keyframes mark-in {
   0% {
     opacity: 0;
-    transform: scale(0.55) rotate(-12deg);
+    transform: scale(0.45) rotate(-18deg);
   }
   55% {
     opacity: 1;
-    transform: scale(1.12) rotate(4deg);
+    transform: scale(1.14) rotate(6deg);
   }
   78% {
-    transform: scale(0.94) rotate(-2deg);
+    transform: scale(0.94) rotate(-3deg);
   }
   100% {
     opacity: 1;
@@ -258,24 +361,71 @@
   }
 }
 
-.brand-word {
-  display: inline-block;
-  animation: brand-in 820ms var(--ease-spring) both;
-  animation-delay: 80ms;
+@keyframes mark-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  40% {
+    transform: translateY(-4px) rotate(-3deg);
+  }
+  70% {
+    transform: translateY(2px) rotate(2deg);
+  }
+}
+
+@keyframes mark-arrow-bob {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+  45% {
+    transform: translateY(5px) scale(1.08);
+  }
+  70% {
+    transform: translateY(-1px) scale(0.98);
+  }
 }
 
 @keyframes brand-in {
   0% {
     opacity: 0;
-    transform: translateY(10px) scale(0.92);
+    transform: translateY(14px) scale(0.9);
   }
-  60% {
+  58% {
     opacity: 1;
-    transform: translateY(-3px) scale(1.04);
+    transform: translateY(-5px) scale(1.05);
   }
   100% {
     opacity: 1;
     transform: none;
+  }
+}
+
+@keyframes brand-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.025);
+  }
+}
+
+@keyframes brand-halo {
+  from {
+    opacity: 0.45;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+
+@keyframes spin-glow {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -987,8 +1137,13 @@
   .hero-orbit-line.is-enter,
   .hero-orbit-line.is-exit,
   .reveal,
-  .mark-bounce,
-  .brand-word,
+  .mark-wrap,
+  .mark-svg,
+  .mark-arrow,
+  .mark-ring,
+  .brand-title-glow,
+  .brand-title-glow::after,
+  .brand-title-text,
   .chip-live,
   .segment[data-active="true"],
   .photo-tile[data-focused="true"],

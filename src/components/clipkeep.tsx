@@ -369,26 +369,30 @@ function ToastBadge({ tone }: { tone: ToastTone }) {
   );
 }
 
-function Mark({ className = "size-8" }: { className?: string }) {
+function Mark({ className = "size-14" }: { className?: string }) {
   return (
-    <svg viewBox="0 0 100 100" className={`text-accent mark-bounce ${className}`} aria-hidden="true">
-      <defs>
-        <linearGradient id="mark-glow" x1="20" y1="10" x2="80" y2="90" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#6babff" />
-          <stop offset="1" stopColor="#3d8bfd" />
-        </linearGradient>
-      </defs>
-      <rect width="100" height="100" rx="26" fill="url(#mark-glow)" opacity="0.16" />
-      <rect x="26" y="28" width="48" height="44" rx="8" fill="none" stroke="url(#mark-glow)" strokeWidth="6" />
-      <path
-        d="M38 44 L50 58 L62 44"
-        fill="none"
-        stroke="url(#mark-glow)"
-        strokeWidth="7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
+    <span className={`mark-wrap ${className}`} aria-hidden="true">
+      <svg viewBox="0 0 100 100" className="mark-svg text-accent">
+        <defs>
+          <linearGradient id="mark-glow" x1="20" y1="10" x2="80" y2="90" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#6babff" />
+            <stop offset="1" stopColor="#3d8bfd" />
+          </linearGradient>
+        </defs>
+        <rect className="mark-plate" width="100" height="100" rx="26" fill="url(#mark-glow)" opacity="0.16" />
+        <rect x="26" y="28" width="48" height="44" rx="8" fill="none" stroke="url(#mark-glow)" strokeWidth="6" />
+        <path
+          className="mark-arrow"
+          d="M38 44 L50 58 L62 44"
+          fill="none"
+          stroke="url(#mark-glow)"
+          strokeWidth="7"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="mark-ring" />
+    </span>
   );
 }
 
@@ -744,20 +748,22 @@ export function Clipkeep() {
       <div aria-hidden="true" className="hero-orb hero-orb-a" />
       <div aria-hidden="true" className="hero-orb hero-orb-b" />
       <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 pb-16 pt-6 sm:px-6">
-        <header className="flex items-center justify-between">
-          <span className="inline-flex items-center gap-2.5">
-            <Mark />
-            <span className="brand-word font-display text-xl font-semibold italic tracking-tight">Clipkeep</span>
-          </span>
-          <p className="chip hidden items-center sm:inline-flex">Photos · videos · no watermark</p>
-        </header>
         <main className="flex flex-1 flex-col">
-          <section className="mt-10 sm:mt-14">
-            <p className="reveal text-xs font-semibold uppercase tracking-[0.22em] text-accent">
-              Instagram · TikTok · X
-            </p>
-            <h1 className="reveal reveal-delay-1 font-display mt-3 text-5xl font-semibold leading-[1.02] tracking-[-0.04em] sm:text-6xl">
-              Clipkeep
+          <section className="mt-8 sm:mt-12">
+            <div className="reveal flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.22em] text-accent">
+                Instagram · TikTok · X
+              </p>
+              <p className="chip hidden items-center sm:inline-flex">Photos · videos · no watermark</p>
+            </div>
+            <h1 className="brand-lockup reveal reveal-delay-1 mt-4">
+              <Mark className="size-12 sm:size-14" />
+              <span className="brand-title">
+                <span className="brand-title-glow" aria-hidden="true" />
+                <span className="brand-title-text font-display text-5xl font-semibold italic leading-[1.02] tracking-[-0.04em] sm:text-6xl">
+                  Clipkeep
+                </span>
+              </span>
             </h1>
             <div className="reveal reveal-delay-2">
               <CapabilityOrbit />
