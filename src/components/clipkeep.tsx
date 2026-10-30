@@ -396,6 +396,163 @@ function Mark({ className = "size-14" }: { className?: string }) {
   );
 }
 
+function roundedRectPath(width: number, height: number, radius: number): string {
+  const r = Math.max(0, Math.min(radius, width / 2, height / 2));
+  return [
+    `M ${r} 0`,
+    `H ${width - r}`,
+    `A ${r} ${r} 0 0 1 ${width} ${r}`,
+    `V ${height - r}`,
+    `A ${r} ${r} 0 0 1 ${width - r} ${height}`,
+    `H ${r}`,
+    `A ${r} ${r} 0 0 1 0 ${height - r}`,
+    `V ${r}`,
+    `A ${r} ${r} 0 0 1 ${r} 0`,
+    "Z",
+  ].join(" ");
+}
+
+function BrandTitle() {
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const trackRef = useRef<HTMLSpanElement>(null);
+  const beadRef = useRef<HTMLSpanElement>(null);
+  const trailRef = useRef<SVGPathElement>(null);
+  const [frame, setFrame] = useState({ w: 0, h: 0 });
+
+  useLayoutEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+
+    const measure = () => {
+      setFrame({ w: wrap.offsetWidth, h: wrap.offsetHeight });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(wrap);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    const bead = beadRef.current;
+    const trail = trailRef.current;
+    if (!track || !bead || frame.w < 8 || frame.h < 8) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    let cancelled = false;
+    const spring = "cubic-bezier(0.34, 1.56, 0.64, 1)";
+
+    const run = async () => {
+      while (!cancelled) {
+        track.style.offsetDistance = "0%";
+        bead.style.transform = "translate(0, 0) scale(1)";
+        bead.style.opacity = "1";
+        if (trail) {
+          trail.style.strokeDashoffset = "0";
+          trail.style.opacity = "1";
+        }
+
+        const trace = track.animate([{ offsetDistance: "0%" }, { offsetDistance: "100%" }], {
+          duration: 2800,
+          easing: "linear",
+          fill: "forwards",
+        });
+        const trailSpin = trail?.animate([{ strokeDashoffset: "0" }, { strokeDashoffset: "-100" }], {
+          duration: 2800,
+          easing: "linear",
+          fill: "forwards",
+        });
+        await trace.finished.catch(() => undefined);
+        await trailSpin?.finished.catch(() => undefined);
+        if (cancelled) return;
+
+        if (trail) trail.style.opacity = "0";
+
+        const bounce = bead.animate(
+          [
+            { transform: "translate(0, 0) scale(1)", opacity: 1, offset: 0 },
+            { transform: "translate(14px, -20px) scale(1.35)", opacity: 1, offset: 0.38 },
+            { transform: "translate(34px, -46px) scale(0.55)", opacity: 0, offset: 1 },
+          ],
+          { duration: 560, easing: spring, fill: "forwards" },
+        );
+        await bounce.finished.catch(() => undefined);
+        if (cancelled) return;
+
+        track.style.offsetDistance = "0%";
+        if (trail) {
+          trail.style.strokeDashoffset = "0";
+          trail.style.opacity = "1";
+        }
+
+        const land = bead.animate(
+          [
+            { transform: "translate(0, -28px) scale(0.35)", opacity: 0, offset: 0 },
+            { transform: "translate(0, 4px) scale(1.2)", opacity: 1, offset: 0.62 },
+            { transform: "translate(0, 0) scale(1)", opacity: 1, offset: 1 },
+          ],
+          { duration: 520, easing: spring, fill: "forwards" },
+        );
+        await land.finished.catch(() => undefined);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+      track.getAnimations().forEach((animation) => animation.cancel());
+      bead.getAnimations().forEach((animation) => animation.cancel());
+      trail?.getAnimations().forEach((animation) => animation.cancel());
+    };
+  }, [frame.w, frame.h]);
+
+  const path = frame.w > 0 ? roundedRectPath(frame.w, frame.h, Math.min(frame.h / 2, 34)) : "";
+
+  return (
+    <span ref={wrapRef} className="brand-title">
+      {path ? (
+        <>
+          <svg className="brand-trace" viewBox={`0 0 ${frame.w} ${frame.h}`} aria-hidden="true">
+            <defs>
+              <linearGradient id="brand-trace-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#9ec5ff" />
+                <stop offset="50%" stopColor="#6babff" />
+                <stop offset="100%" stopColor="#3d8bfd" />
+              </linearGradient>
+              <filter id="brand-trace-blur" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="2.4" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+            <path d={path} className="brand-trace-guide" />
+            <path
+              ref={trailRef}
+              d={path}
+              className="brand-trace-stroke"
+              pathLength={100}
+              filter="url(#brand-trace-blur)"
+            />
+          </svg>
+          <span
+            ref={trackRef}
+            className="brand-trace-bead-track"
+            style={{ offsetPath: `path('${path}')` }}
+            aria-hidden="true"
+          >
+            <span ref={beadRef} className="brand-trace-bead" />
+          </span>
+        </>
+      ) : null}
+      <span className="brand-title-text font-display text-5xl font-semibold italic leading-[1.02] tracking-[-0.04em] sm:text-6xl">
+        Clipkeep
+      </span>
+    </span>
+  );
+}
+
 function PlatformIcon({ platform, className = "size-4" }: { platform: Platform; className?: string }) {
   if (platform === "tiktok") {
     return (
@@ -758,12 +915,7 @@ export function Clipkeep() {
             </div>
             <h1 className="brand-lockup reveal reveal-delay-1 mt-4">
               <Mark className="size-12 sm:size-14" />
-              <span className="brand-title">
-                <span className="brand-title-glow" aria-hidden="true" />
-                <span className="brand-title-text font-display text-5xl font-semibold italic leading-[1.02] tracking-[-0.04em] sm:text-6xl">
-                  Clipkeep
-                </span>
-              </span>
+              <BrandTitle />
             </h1>
             <div className="reveal reveal-delay-2">
               <CapabilityOrbit />
