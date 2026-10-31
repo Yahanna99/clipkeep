@@ -288,72 +288,79 @@
 .brand-title {
   position: relative;
   display: inline-block;
-  padding: 0.7rem 1.05rem;
   isolation: isolate;
+  animation: brand-in 860ms var(--ease-spring) both;
 }
 
-.brand-trace {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+.brand-title-fallback {
+  color: var(--color-fg);
+  text-shadow: 0 0 28px color-mix(in oklab, var(--color-accent) 35%, transparent);
+}
+
+.brand-wordmark {
+  display: block;
   overflow: visible;
-  pointer-events: none;
-  z-index: 0;
 }
 
-.brand-trace-guide {
-  fill: none;
-  stroke: color-mix(in oklab, var(--color-accent) 22%, transparent);
-  stroke-width: 1.25;
+.brand-wordmark-fill {
+  fill: color-mix(in oklab, var(--color-fg) 94%, var(--color-accent));
+  stroke: none;
 }
 
-.brand-trace-stroke {
+.brand-wordmark-ink {
   fill: none;
-  stroke: url(#brand-trace-grad);
-  stroke-width: 3.5;
+  stroke: #2f6fdb;
+  stroke-width: 2.7;
   stroke-linecap: round;
-  stroke-dasharray: 14 86;
-  stroke-dashoffset: 0;
-  opacity: 1;
+  stroke-linejoin: round;
 }
 
-.brand-trace-bead-track {
-  position: absolute;
-  top: 0;
-  left: 0;
-  z-index: 2;
-  width: 16px;
-  height: 16px;
-  margin: -8px 0 0 -8px;
-  offset-rotate: 0deg;
-  offset-anchor: center;
-  pointer-events: none;
+.brand-wordmark-wake {
+  fill: none;
+  stroke: color-mix(in oklab, #9ec5ff 70%, var(--color-accent));
+  stroke-width: 5.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.55;
+}
+
+.brand-wordmark-tip {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 4.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .brand-trace-bead {
-  display: block;
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  width: 15px;
+  height: 15px;
+  margin: -7.5px 0 0 -7.5px;
   border-radius: 999px;
+  pointer-events: none;
+  opacity: 0;
   background:
-    radial-gradient(circle at 32% 28%, #fff, #9ec5ff 34%, var(--color-accent) 72%, transparent 78%);
+    radial-gradient(circle at 32% 28%, #fff 0%, #dbeafe 28%, #6babff 58%, transparent 76%);
   box-shadow:
-    0 0 10px 3px color-mix(in oklab, var(--color-accent-bright) 85%, transparent),
-    0 0 24px 8px color-mix(in oklab, var(--color-accent) 55%, transparent);
+    0 0 12px 4px color-mix(in oklab, var(--color-accent-bright) 90%, transparent),
+    0 0 28px 10px color-mix(in oklab, var(--color-accent) 55%, transparent);
   will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
 }
 
-.brand-title-text {
-  position: relative;
-  z-index: 1;
-  display: inline-block;
-  color: var(--color-fg);
-  text-shadow: 0 0 28px color-mix(in oklab, var(--color-accent) 35%, transparent);
-  animation:
-    brand-in 860ms var(--ease-spring) both,
-    brand-breathe 3.2s ease-in-out 900ms infinite;
-  transform-origin: center;
+.brand-trace-bead-soft {
+  z-index: 2;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  background:
+    radial-gradient(circle at 50% 50%, color-mix(in oklab, #9ec5ff 70%, transparent), transparent 72%);
+  box-shadow: none;
+  filter: blur(1.5px);
 }
 
 @keyframes mark-in {
@@ -412,16 +419,6 @@
   100% {
     opacity: 1;
     transform: none;
-  }
-}
-
-@keyframes brand-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.025);
   }
 }
 
@@ -1143,7 +1140,11 @@
   .mark-svg,
   .mark-arrow,
   .mark-ring,
-  .brand-title-text,
+  .brand-title,
+  .brand-wordmark-ink,
+  .brand-wordmark-wake,
+  .brand-wordmark-tip,
+  .brand-trace-bead,
   .chip-live,
   .segment[data-active="true"],
   .photo-tile[data-focused="true"],
@@ -1173,15 +1174,15 @@
     transform: none !important;
   }
 
-  .brand-trace-stroke {
-    animation: none !important;
-    stroke-dasharray: none;
-    opacity: 0.5;
+  .brand-wordmark-ink {
+    stroke-dasharray: none !important;
+    stroke-dashoffset: 0 !important;
+    opacity: 0.85 !important;
   }
 
-  .brand-trace-bead-track,
+  .brand-wordmark-wake,
+  .brand-wordmark-tip,
   .brand-trace-bead {
-    animation: none !important;
     display: none !important;
   }
 
