@@ -15,6 +15,10 @@ export default tseslint.config(
       ".nitro/**",
       "node_modules/**",
       "src/routeTree.gen.ts",
+      // Vendored agent skills, not app source. Flat config does not read .gitignore,
+      // so .grok/ (gitignored) would still be scanned when present locally.
+      ".agents/**",
+      ".grok/**",
     ],
   },
   js.configs.recommended,
