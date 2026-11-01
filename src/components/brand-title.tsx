@@ -5,6 +5,7 @@ type GlyphFrame = {
   w: number;
   h: number;
   length: number;
+  scale: number;
 };
 
 type BrandFont = {
@@ -43,11 +44,12 @@ async function loadBrandFont() {
 function buildGlyphFrame(font: BrandFont, fontSize: number): GlyphFrame {
   const path = font.getPath(WORD, 0, 0, fontSize);
   const box = path.getBoundingBox();
-  const pad = Math.max(20, fontSize * 0.24);
+  const pad = Math.max(16, fontSize * 0.18);
   const shiftX = pad - box.x1;
   const shiftY = pad - box.y1;
   const shifted = font.getPath(WORD, shiftX, shiftY, fontSize);
-  const d = shifted.toPathData(2);
+  // Variable-font paths can emit NaN at some sizes; scrub before measuring/rendering.
+  const d = shifted.toPathData(2).replace(/-?NaN/gi, "0");
   const width = Math.ceil(box.x2 - box.x1 + pad * 2);
   const height = Math.ceil(box.y2 - box.y1 + pad * 2);
 
@@ -60,7 +62,7 @@ function buildGlyphFrame(font: BrandFont, fontSize: number): GlyphFrame {
   const length = probe.getTotalLength();
   svg.remove();
 
-  return { d, w: width, h: height, length: Math.max(1, length) };
+  return { d, w: width, h: height, length: Math.max(1, length), scale: 1 };
 }
 
 function smootherstep(t: number) {
@@ -68,14 +70,12 @@ function smootherstep(t: number) {
   return x * x * x * (x * (x * 6 - 15) + 10);
 }
 
-function easeOutCubic(t: number) {
-  return 1 - Math.pow(1 - t, 3);
+function easeInOutCubic(t: number) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
 
-function easeOutBack(t: number) {
-  const c1 = 1.40158;
-  const c3 = c1 + 1;
-  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+function easeOutCubic(t: number) {
+  return 1 - Math.pow(1 - t, 3);
 }
 
 function lerp(a: number, b: number, t: number) {
@@ -84,16 +84,13 @@ function lerp(a: number, b: number, t: number) {
 
 function pointAt(path: SVGPathElement, distance: number) {
   const clamped = Math.min(path.getTotalLength(), Math.max(0, distance));
-  const point = path.getPointAtLength(clamped);
-  return { x: point.x, y: point.y };
+  return path.getPointAtLength(clamped);
 }
 
 export function BrandTitle() {
-  const inkRef = useRef<SVGPathElement>(null);
-  const wakeRef = useRef<SVGPathElement>(null);
-  const tipRef = useRef<SVGPathElement>(null);
-  const beadRef = useRef<HTMLSpanElement>(null);
-  const softRef = useRef<HTMLSpanElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const pathRef = useRef<SVGPathElement>(null);
+  const slimeRef = useRef<HTMLSpanElement>(null);
   const [frame, setFrame] = useState<GlyphFrame | null>(null);
 
   useEffect(() => {
@@ -103,8 +100,10 @@ export function BrandTitle() {
       try {
         const font = await loadBrandFont();
         if (cancelled) return;
-        const size = window.matchMedia("(min-width: 640px)").matches ? 60 : 48;
-        setFrame(buildGlyphFrame(font, size));
+        // Build at 60 — some VF sizes emit NaN commands; scale the SVG for mobile.
+        const base = buildGlyphFrame(font, 60);
+        const scale = window.matchMedia("(min-width: 640px)").matches ? 1 : 48 / 60;
+        setFrame({ ...base, scale });
       } catch {
         if (!cancelled) setFrame(null);
       }
@@ -120,50 +119,61 @@ export function BrandTitle() {
   }, []);
 
   useEffect(() => {
-    const ink = inkRef.current;
-    const wake = wakeRef.current;
-    const tip = tipRef.current;
-    const bead = beadRef.current;
-    const soft = softRef.current;
-    if (!ink || !wake || !tip || !bead || !soft || !frame) return;
+    const svg = svgRef.current;
+    const path = pathRef.current;
+    const slime = slimeRef.current;
+    if (!svg || !path || !slime || !frame) return;
 
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      ink.style.strokeDasharray = "none";
-      ink.style.strokeDashoffset = "0";
-      wake.style.opacity = "0";
-      tip.style.opacity = "0";
-      bead.style.opacity = "0";
-      soft.style.opacity = "0";
+      slime.style.opacity = "0";
       return;
     }
 
     let cancelled = false;
     let raf = 0;
     const length = frame.length;
-    const tipLen = Math.max(28, length * 0.028);
-    const wakeLen = Math.max(70, length * 0.08);
-    const drawMs = Math.min(9000, Math.max(6200, length * 2.4));
+    // Slow, calm outline lap.
+    const traceMs = Math.min(14000, Math.max(9000, length * 4.2));
+    const floatMs = 1600;
 
-    ink.style.strokeDasharray = `${length}`;
-    wake.style.strokeDasharray = `${wakeLen} ${length}`;
-    tip.style.strokeDasharray = `${tipLen} ${length}`;
-
-    const setHead = (distance: number, opacity = 1, scale = 1) => {
-      const { x, y } = pointAt(ink, distance);
-      const transform = `translate(${x}px, ${y}px) scale(${scale})`;
-      bead.style.transform = transform;
-      soft.style.transform = `translate(${x}px, ${y}px) scale(${scale * 1.85})`;
-      bead.style.opacity = String(opacity);
-      soft.style.opacity = String(opacity * 0.55);
+    const toScreen = (localX: number, localY: number) => {
+      const ctm = path.getScreenCTM();
+      if (!ctm) {
+        const box = svg.getBoundingClientRect();
+        return { x: box.left + localX, y: box.top + localY };
+      }
+      return {
+        x: ctm.a * localX + ctm.c * localY + ctm.e,
+        y: ctm.b * localX + ctm.d * localY + ctm.f,
+      };
     };
 
-    const setStrokeProgress = (progress: number) => {
-      const drawn = length * progress;
-      const offset = length - drawn;
-      ink.style.strokeDashoffset = `${offset}`;
-      wake.style.strokeDashoffset = `${offset}`;
-      tip.style.strokeDashoffset = `${offset}`;
-      setHead(drawn, 1, 1);
+    const placeSlime = (
+      x: number,
+      y: number,
+      opts: { scale?: number; stretchX?: number; stretchY?: number; opacity?: number; rotating?: number } = {},
+    ) => {
+      const scale = opts.scale ?? 1;
+      const stretchX = opts.stretchX ?? 1;
+      const stretchY = opts.stretchY ?? 1;
+      const opacity = opts.opacity ?? 1;
+      const rotating = opts.rotating ?? 0;
+      slime.style.opacity = String(opacity);
+      slime.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotating}deg) scale(${scale * stretchX}, ${scale * stretchY})`;
+    };
+
+    const placeOnPath = (distance: number, extra: Parameters<typeof placeSlime>[2] = {}) => {
+      const point = pointAt(path, distance);
+      const screen = toScreen(point.x, point.y);
+      placeSlime(screen.x, screen.y, extra);
+    };
+
+    const floatCorner = () => {
+      const margin = 28;
+      return {
+        x: Math.max(margin, window.innerWidth - margin - 10),
+        y: margin + 8,
+      };
     };
 
     const animate = (duration: number, tick: (t: number) => void) =>
@@ -184,64 +194,82 @@ export function BrandTitle() {
 
     const run = async () => {
       while (!cancelled) {
-        ink.style.opacity = "1";
-        wake.style.opacity = "1";
-        tip.style.opacity = "1";
-
-        await animate(drawMs, (t) => {
-          const progress = smootherstep(t);
-          setStrokeProgress(progress);
+        // Slow slime outline around Clipkeep.
+        await animate(traceMs, (t) => {
+          const progress = t; // steady crawl feels more “tracing”
+          const wobble = 1 + Math.sin(t * Math.PI * 10) * 0.06;
+          placeOnPath(length * progress, {
+            scale: wobble,
+            stretchX: 1 + Math.sin(t * Math.PI * 7) * 0.12,
+            stretchY: 1 - Math.sin(t * Math.PI * 7) * 0.1,
+            rotating: Math.sin(t * Math.PI * 6) * 18,
+          });
         });
         if (cancelled) return;
 
-        tip.style.opacity = "0";
-        wake.style.opacity = "0";
-        const end = pointAt(ink, length);
-        const startPt = pointAt(ink, 0);
+        const endLocal = pointAt(path, length);
+        const end = toScreen(endLocal.x, endLocal.y);
+        const corner = floatCorner();
 
+        // Slime stretch-jump to the top-right.
+        await animate(720, (t) => {
+          const p = easeInOutCubic(t);
+          const x = lerp(end.x, corner.x, p);
+          const y = lerp(end.y, corner.y, p) - Math.sin(p * Math.PI) * 42;
+          const stretchX = 1 + Math.sin(p * Math.PI) * 1.35;
+          const stretchY = 1 - Math.sin(p * Math.PI) * 0.45;
+          placeSlime(x, y, {
+            scale: lerp(1, 1.15, Math.sin(p * Math.PI)),
+            stretchX,
+            stretchY,
+            rotating: lerp(0, 120, p),
+            opacity: 1,
+          });
+        });
+        if (cancelled) return;
+
+        // Float / jiggle in the corner for ~1.6s.
+        await animate(floatMs, (t) => {
+          const bob = Math.sin(t * Math.PI * 3) * 7;
+          const sway = Math.cos(t * Math.PI * 2.2) * 5;
+          placeSlime(corner.x + sway, corner.y + bob, {
+            scale: 1.08 + Math.sin(t * Math.PI * 4) * 0.08,
+            stretchX: 1 + Math.sin(t * Math.PI * 5) * 0.22,
+            stretchY: 1 - Math.sin(t * Math.PI * 5) * 0.16,
+            rotating: Math.sin(t * Math.PI * 3) * 24,
+            opacity: 1,
+          });
+        });
+        if (cancelled) return;
+
+        const startLocal = pointAt(path, 0);
+        const start = toScreen(startLocal.x, startLocal.y);
+
+        // Slime jumps back onto the first letter.
         await animate(780, (t) => {
           const p = easeOutCubic(t);
-          const x = lerp(end.x, end.x + 38, p);
-          const y = lerp(end.y, end.y - 54, p) - Math.sin(p * Math.PI) * 10;
-          const scale = lerp(1, 0.35, p);
-          const opacity = 1 - smootherstep(Math.max(0, (t - 0.35) / 0.65));
-          const transform = `translate(${x}px, ${y}px) scale(${scale})`;
-          bead.style.transform = transform;
-          soft.style.transform = `translate(${x}px, ${y}px) scale(${scale * 2.1})`;
-          bead.style.opacity = String(opacity);
-          soft.style.opacity = String(opacity * 0.45);
+          const x = lerp(corner.x, start.x, p);
+          const y = lerp(corner.y, start.y, p) - Math.sin(p * Math.PI) * 36;
+          placeSlime(x, y, {
+            scale: lerp(1.1, 1, p),
+            stretchX: 1 + Math.sin(p * Math.PI) * 1.1,
+            stretchY: 1 - Math.sin(p * Math.PI) * 0.4,
+            rotating: lerp(20, 0, p),
+            opacity: 1,
+          });
         });
         if (cancelled) return;
 
-        await animate(520, (t) => {
-          ink.style.opacity = String(1 - smootherstep(t));
+        // Soft settle onto the path before the next slow outline.
+        await animate(320, (t) => {
+          const p = smootherstep(t);
+          placeOnPath(0, {
+            scale: lerp(1.2, 1, p),
+            stretchX: lerp(1.25, 1, p),
+            stretchY: lerp(0.85, 1, p),
+            rotating: lerp(-12, 0, p),
+          });
         });
-        if (cancelled) return;
-
-        ink.style.strokeDashoffset = `${length}`;
-        wake.style.strokeDashoffset = `${length}`;
-        tip.style.strokeDashoffset = `${length}`;
-        ink.style.opacity = "0";
-
-        await animate(680, (t) => {
-          const p = easeOutBack(Math.min(1, t * 1.02));
-          const x = startPt.x;
-          const y = lerp(startPt.y - 34, startPt.y, Math.min(1, p));
-          const scale = lerp(0.25, 1, Math.min(1, p));
-          const opacity = smootherstep(Math.min(1, t * 1.15));
-          ink.style.opacity = String(smootherstep(Math.max(0, (t - 0.45) / 0.55)));
-          const transform = `translate(${x}px, ${y}px) scale(${scale})`;
-          bead.style.transform = transform;
-          soft.style.transform = `translate(${x}px, ${y}px) scale(${scale * 1.9})`;
-          bead.style.opacity = String(opacity);
-          soft.style.opacity = String(opacity * 0.5);
-        });
-        if (cancelled) return;
-
-        ink.style.opacity = "1";
-        wake.style.opacity = "1";
-        tip.style.opacity = "1";
-        setStrokeProgress(0);
       }
     };
 
@@ -260,50 +288,26 @@ export function BrandTitle() {
     );
   }
 
+  const displayW = Math.round(frame.w * frame.scale);
+  const displayH = Math.round(frame.h * frame.scale);
+
   return (
-    <span className="brand-title" style={{ width: frame.w, height: frame.h }}>
+    <span className="brand-title" style={{ width: displayW, height: displayH }}>
       <svg
+        ref={svgRef}
         className="brand-wordmark"
-        width={frame.w}
-        height={frame.h}
+        width={displayW}
+        height={displayH}
         viewBox={`0 0 ${frame.w} ${frame.h}`}
         role="img"
         aria-label="Clipkeep"
       >
         <title>Clipkeep</title>
-        <defs>
-          <filter id="brand-ink-glow" x="-40%" y="-40%" width="180%" height="180%" colorInterpolationFilters="sRGB">
-            <feGaussianBlur stdDeviation="1.8" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="brand-wake-glow" x="-60%" y="-60%" width="220%" height="220%" colorInterpolationFilters="sRGB">
-            <feGaussianBlur stdDeviation="3.2" result="blur" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-          <filter id="brand-tip-glow" x="-120%" y="-120%" width="340%" height="340%" colorInterpolationFilters="sRGB">
-            <feGaussianBlur in="SourceGraphic" stdDeviation="3.4" result="blur" />
-            <feGaussianBlur in="SourceGraphic" stdDeviation="1.1" result="tight" />
-            <feMerge>
-              <feMergeNode in="blur" />
-              <feMergeNode in="blur" />
-              <feMergeNode in="tight" />
-              <feMergeNode in="SourceGraphic" />
-            </feMerge>
-          </filter>
-        </defs>
         <path d={frame.d} className="brand-wordmark-fill" />
-        <path ref={inkRef} d={frame.d} className="brand-wordmark-ink" filter="url(#brand-ink-glow)" />
-        <path ref={wakeRef} d={frame.d} className="brand-wordmark-wake" filter="url(#brand-wake-glow)" />
-        <path ref={tipRef} d={frame.d} className="brand-wordmark-tip" filter="url(#brand-tip-glow)" />
+        {/* Invisible path used only for slime tracing math. */}
+        <path ref={pathRef} d={frame.d} className="brand-wordmark-trace" />
       </svg>
-      <span ref={softRef} className="brand-trace-bead brand-trace-bead-soft" aria-hidden="true" />
-      <span ref={beadRef} className="brand-trace-bead" aria-hidden="true" />
+      <span ref={slimeRef} className="brand-slime" aria-hidden="true" />
     </span>
   );
 }

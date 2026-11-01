@@ -724,13 +724,14 @@ export function Clipkeep() {
   }
 
   return (
-    <div className="app-shell">
+    <>
       <Toaster
         theme="dark"
         position="top-center"
         gap={10}
         offset={18}
         duration={3400}
+        className="clip-toaster"
         icons={{
           success: <ToastBadge tone="success" />,
           error: <ToastBadge tone="error" />,
@@ -746,6 +747,7 @@ export function Clipkeep() {
           },
         }}
       />
+      <div className="app-shell">
       <div aria-hidden="true" className="hero-orb hero-orb-a" />
       <div aria-hidden="true" className="hero-orb hero-orb-b" />
       <div className="relative mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 pb-16 pt-6 sm:px-6">
@@ -1058,7 +1060,8 @@ export function Clipkeep() {
         </main>
         <footer className="mt-14 text-xs leading-relaxed text-subtle">For personal copies of public posts. Respect creators.</footer>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 
