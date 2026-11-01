@@ -1,69 +1,13 @@
-import { useEffect, useRef, useState } from "react";
-
-type GlyphFrame = {
-  d: string;
-  w: number;
-  h: number;
-  length: number;
-  scale: number;
-};
-
-type BrandFont = {
-  getPath: (
-    text: string,
-    x: number,
-    y: number,
-    fontSize: number,
-  ) => {
-    getBoundingBox: () => { x1: number; y1: number; x2: number; y2: number };
-    toPathData: (decimalPlaces: number) => string;
-  };
-};
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 const WORD = "Clipkeep";
-const FONT_URL = "/fonts/Fraunces-Italic.ttf";
 
-let fontPromise: Promise<BrandFont> | null = null;
-
-async function loadBrandFont() {
-  if (!fontPromise) {
-    fontPromise = (async () => {
-      const mod = await import("opentype.js");
-      const parse =
-        (mod as { parse?: (buffer: ArrayBuffer) => BrandFont }).parse ??
-        (mod as { default?: { parse: (buffer: ArrayBuffer) => BrandFont } }).default?.parse;
-      if (!parse) throw new Error("opentype.parse unavailable");
-      const response = await fetch(FONT_URL);
-      if (!response.ok) throw new Error(`Font HTTP ${response.status}`);
-      return parse(await response.arrayBuffer());
-    })();
-  }
-  return fontPromise;
-}
-
-function buildGlyphFrame(font: BrandFont, fontSize: number): GlyphFrame {
-  const path = font.getPath(WORD, 0, 0, fontSize);
-  const box = path.getBoundingBox();
-  const pad = Math.max(16, fontSize * 0.18);
-  const shiftX = pad - box.x1;
-  const shiftY = pad - box.y1;
-  const shifted = font.getPath(WORD, shiftX, shiftY, fontSize);
-  // Variable-font paths can emit NaN at some sizes; scrub before measuring/rendering.
-  const d = shifted.toPathData(2).replace(/-?NaN/gi, "0");
-  const width = Math.ceil(box.x2 - box.x1 + pad * 2);
-  const height = Math.ceil(box.y2 - box.y1 + pad * 2);
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  const probe = document.createElementNS("http://www.w3.org/2000/svg", "path");
-  probe.setAttribute("d", d);
-  svg.appendChild(probe);
-  svg.style.cssText = "position:absolute;visibility:hidden;width:0;height:0";
-  document.body.appendChild(svg);
-  const length = probe.getTotalLength();
-  svg.remove();
-
-  return { d, w: width, h: height, length: Math.max(1, length), scale: 1 };
-}
+type TraceFrame = {
+  d: string;
+  length: number;
+  width: number;
+  height: number;
+};
 
 function smootherstep(t: number) {
   const x = Math.min(1, Math.max(0, t));
@@ -87,30 +31,124 @@ function pointAt(path: SVGPathElement, distance: number) {
   return path.getPointAtLength(clamped);
 }
 
+type LetterBox = { x: number; y: number; w: number; h: number };
+
+/**
+ * One continuous outline around the word: along letter tops L→R,
+ * down the last letter, along bottoms R→L, back up the first.
+ * Uses real glyph boxes so the slime stays glued to Clipkeep.
+ */
+function wordOutlinePath(letters: LetterBox[]): string {
+  if (!letters.length) return "";
+  const top = letters.map((letter) => ({
+    x: letter.x + letter.w / 2,
+    y: letter.y,
+  }));
+  const bottom = letters.map((letter) => ({
+    x: letter.x + letter.w / 2,
+    y: letter.y + letter.h,
+  }));
+  const first = letters[0];
+  const last = letters[letters.length - 1];
+  const pts = [
+    { x: first.x, y: first.y + first.h * 0.55 },
+    { x: first.x, y: first.y },
+    ...top,
+    { x: last.x + last.w, y: last.y },
+    { x: last.x + last.w, y: last.y + last.h * 0.55 },
+    { x: last.x + last.w, y: last.y + last.h },
+    ...bottom.reverse(),
+    { x: first.x, y: first.y + first.h },
+    { x: first.x, y: first.y + first.h * 0.55 },
+  ];
+
+  // Smooth through the silhouette with quadratic midpoints.
+  let d = `M${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
+  for (let i = 1; i < pts.length - 1; i += 1) {
+    const curr = pts[i];
+    const next = pts[i + 1];
+    const mx = (curr.x + next.x) / 2;
+    const my = (curr.y + next.y) / 2;
+    d += ` Q${curr.x.toFixed(2)} ${curr.y.toFixed(2)} ${mx.toFixed(2)} ${my.toFixed(2)}`;
+  }
+  const end = pts[pts.length - 1];
+  d += ` T${end.x.toFixed(2)} ${end.y.toFixed(2)} Z`;
+  return d;
+}
+
+function buildTraceFromText(textEl: HTMLElement): TraceFrame | null {
+  const textNode = [...textEl.childNodes].find(
+    (node): node is Text => node.nodeType === Node.TEXT_NODE && (node.textContent?.length ?? 0) > 0,
+  );
+  if (!textNode) return null;
+
+  const origin = textEl.getBoundingClientRect();
+  if (origin.width < 8 || origin.height < 8) return null;
+
+  const pad = 1.5;
+  const letters: LetterBox[] = [];
+  for (let index = 0; index < WORD.length; index += 1) {
+    const range = document.createRange();
+    range.setStart(textNode, index);
+    range.setEnd(textNode, index + 1);
+    const rect = range.getBoundingClientRect();
+    range.detach();
+    if (rect.width < 1 || rect.height < 1) continue;
+    letters.push({
+      x: rect.left - origin.left - pad,
+      y: rect.top - origin.top - pad,
+      w: rect.width + pad * 2,
+      h: rect.height + pad * 2,
+    });
+  }
+  if (!letters.length) return null;
+
+  const d = wordOutlinePath(letters);
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  const probe = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  probe.setAttribute("d", d);
+  svg.appendChild(probe);
+  svg.style.cssText = "position:absolute;visibility:hidden;width:0;height:0";
+  document.body.appendChild(svg);
+  const length = probe.getTotalLength();
+  svg.remove();
+
+  return {
+    d,
+    length: Math.max(1, length),
+    width: origin.width,
+    height: origin.height,
+  };
+}
+
 export function BrandTitle() {
-  const svgRef = useRef<SVGSVGElement>(null);
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  const textRef = useRef<HTMLSpanElement>(null);
   const pathRef = useRef<SVGPathElement>(null);
   const slimeRef = useRef<HTMLSpanElement>(null);
-  const [frame, setFrame] = useState<GlyphFrame | null>(null);
+  const [frame, setFrame] = useState<TraceFrame | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let cancelled = false;
+    const textEl = textRef.current;
+    if (!textEl) return;
 
-    const render = async () => {
+    const measure = async () => {
       try {
-        const font = await loadBrandFont();
+        await document.fonts.ready;
         if (cancelled) return;
-        // Build at 60 — some VF sizes emit NaN commands; scale the SVG for mobile.
-        const base = buildGlyphFrame(font, 60);
-        const scale = window.matchMedia("(min-width: 640px)").matches ? 1 : 48 / 60;
-        setFrame({ ...base, scale });
+        // One frame after fonts so italic metrics settle.
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (cancelled) return;
+        const next = buildTraceFromText(textEl);
+        if (!cancelled) setFrame(next);
       } catch {
         if (!cancelled) setFrame(null);
       }
     };
 
-    void render();
-    const onResize = () => void render();
+    void measure();
+    const onResize = () => void measure();
     window.addEventListener("resize", onResize);
     return () => {
       cancelled = true;
@@ -119,10 +157,10 @@ export function BrandTitle() {
   }, []);
 
   useEffect(() => {
-    const svg = svgRef.current;
+    const wrap = wrapRef.current;
     const path = pathRef.current;
     const slime = slimeRef.current;
-    if (!svg || !path || !slime || !frame) return;
+    if (!wrap || !path || !slime || !frame) return;
 
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       slime.style.opacity = "0";
@@ -132,21 +170,8 @@ export function BrandTitle() {
     let cancelled = false;
     let raf = 0;
     const length = frame.length;
-    // Slow, calm outline lap.
-    const traceMs = Math.min(14000, Math.max(9000, length * 4.2));
+    const traceMs = Math.min(12000, Math.max(7800, length * 3.8));
     const floatMs = 1600;
-
-    const toScreen = (localX: number, localY: number) => {
-      const ctm = path.getScreenCTM();
-      if (!ctm) {
-        const box = svg.getBoundingClientRect();
-        return { x: box.left + localX, y: box.top + localY };
-      }
-      return {
-        x: ctm.a * localX + ctm.c * localY + ctm.e,
-        y: ctm.b * localX + ctm.d * localY + ctm.f,
-      };
-    };
 
     const placeSlime = (
       x: number,
@@ -159,20 +184,21 @@ export function BrandTitle() {
       const opacity = opts.opacity ?? 1;
       const rotating = opts.rotating ?? 0;
       slime.style.opacity = String(opacity);
+      // Coordinates are local to the title wrapper (position: absolute).
       slime.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${rotating}deg) scale(${scale * stretchX}, ${scale * stretchY})`;
     };
 
     const placeOnPath = (distance: number, extra: Parameters<typeof placeSlime>[2] = {}) => {
       const point = pointAt(path, distance);
-      const screen = toScreen(point.x, point.y);
-      placeSlime(screen.x, screen.y, extra);
+      placeSlime(point.x, point.y, extra);
     };
 
-    const floatCorner = () => {
+    const floatCornerLocal = () => {
+      const wrapBox = wrap.getBoundingClientRect();
       const margin = 28;
       return {
-        x: Math.max(margin, window.innerWidth - margin - 10),
-        y: margin + 8,
+        x: Math.max(wrapBox.width + 24, window.innerWidth - margin - wrapBox.left - 10),
+        y: Math.min(-wrapBox.top + margin + 8, -12),
       };
     };
 
@@ -193,42 +219,39 @@ export function BrandTitle() {
       });
 
     const run = async () => {
+      // Start visible on the first letter.
+      placeOnPath(0, { opacity: 1 });
+
       while (!cancelled) {
-        // Slow slime outline around Clipkeep.
         await animate(traceMs, (t) => {
-          const progress = t; // steady crawl feels more “tracing”
           const wobble = 1 + Math.sin(t * Math.PI * 10) * 0.06;
-          placeOnPath(length * progress, {
+          placeOnPath(length * t, {
             scale: wobble,
             stretchX: 1 + Math.sin(t * Math.PI * 7) * 0.12,
             stretchY: 1 - Math.sin(t * Math.PI * 7) * 0.1,
             rotating: Math.sin(t * Math.PI * 6) * 18,
+            opacity: 1,
           });
         });
         if (cancelled) return;
 
-        const endLocal = pointAt(path, length);
-        const end = toScreen(endLocal.x, endLocal.y);
-        const corner = floatCorner();
+        const end = pointAt(path, length);
+        const corner = floatCornerLocal();
 
-        // Slime stretch-jump to the top-right.
         await animate(720, (t) => {
           const p = easeInOutCubic(t);
           const x = lerp(end.x, corner.x, p);
           const y = lerp(end.y, corner.y, p) - Math.sin(p * Math.PI) * 42;
-          const stretchX = 1 + Math.sin(p * Math.PI) * 1.35;
-          const stretchY = 1 - Math.sin(p * Math.PI) * 0.45;
           placeSlime(x, y, {
             scale: lerp(1, 1.15, Math.sin(p * Math.PI)),
-            stretchX,
-            stretchY,
+            stretchX: 1 + Math.sin(p * Math.PI) * 1.35,
+            stretchY: 1 - Math.sin(p * Math.PI) * 0.45,
             rotating: lerp(0, 120, p),
             opacity: 1,
           });
         });
         if (cancelled) return;
 
-        // Float / jiggle in the corner for ~1.6s.
         await animate(floatMs, (t) => {
           const bob = Math.sin(t * Math.PI * 3) * 7;
           const sway = Math.cos(t * Math.PI * 2.2) * 5;
@@ -242,10 +265,7 @@ export function BrandTitle() {
         });
         if (cancelled) return;
 
-        const startLocal = pointAt(path, 0);
-        const start = toScreen(startLocal.x, startLocal.y);
-
-        // Slime jumps back onto the first letter.
+        const start = pointAt(path, 0);
         await animate(780, (t) => {
           const p = easeOutCubic(t);
           const x = lerp(corner.x, start.x, p);
@@ -260,7 +280,6 @@ export function BrandTitle() {
         });
         if (cancelled) return;
 
-        // Soft settle onto the path before the next slow outline.
         await animate(320, (t) => {
           const p = smootherstep(t);
           placeOnPath(0, {
@@ -268,6 +287,7 @@ export function BrandTitle() {
             stretchX: lerp(1.25, 1, p),
             stretchY: lerp(0.85, 1, p),
             rotating: lerp(-12, 0, p),
+            opacity: 1,
           });
         });
       }
@@ -280,33 +300,19 @@ export function BrandTitle() {
     };
   }, [frame]);
 
-  if (!frame) {
-    return (
-      <span className="brand-title brand-title-fallback font-display text-5xl font-semibold italic tracking-[-0.04em] sm:text-6xl">
-        Clipkeep
-      </span>
-    );
-  }
-
-  const displayW = Math.round(frame.w * frame.scale);
-  const displayH = Math.round(frame.h * frame.scale);
-
   return (
-    <span className="brand-title" style={{ width: displayW, height: displayH }}>
-      <svg
-        ref={svgRef}
-        className="brand-wordmark"
-        width={displayW}
-        height={displayH}
-        viewBox={`0 0 ${frame.w} ${frame.h}`}
-        role="img"
-        aria-label="Clipkeep"
+    <span ref={wrapRef} className="brand-title">
+      <span
+        ref={textRef}
+        className="brand-title-text font-display text-5xl font-semibold italic leading-[1.02] tracking-[-0.04em] sm:text-6xl"
       >
-        <title>Clipkeep</title>
-        <path d={frame.d} className="brand-wordmark-fill" />
-        {/* Invisible path used only for slime tracing math. */}
-        <path ref={pathRef} d={frame.d} className="brand-wordmark-trace" />
-      </svg>
+        {WORD}
+      </span>
+      {frame ? (
+        <svg className="brand-trace" width={frame.width} height={frame.height} aria-hidden="true">
+          <path ref={pathRef} d={frame.d} className="brand-trace-path" />
+        </svg>
+      ) : null}
       <span ref={slimeRef} className="brand-slime" aria-hidden="true" />
     </span>
   );
