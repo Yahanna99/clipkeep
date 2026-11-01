@@ -196,12 +196,43 @@ function igKindPath(opened: string): "reel" | "p" {
   return /\/(?:reel|reels|tv)\//i.test(opened) ? "reel" : "p";
 }
 
+/** Instagram media_type 8 / product_type carousel / GraphSidecar / XIGPolarisCarouselMedia. */
+function isCarouselType(item: Record<string, unknown>): boolean {
+  if (num(item.media_type) === 8) return true;
+  const product = str(item.product_type)?.toLowerCase();
+  if (product === "carousel_container" || product === "carousel") return true;
+  const typename = str(item.__typename) || "";
+  return /carousel|sidecar/i.test(typename);
+}
+
+function carouselMediaList(item: Record<string, unknown>): Record<string, unknown>[] | null {
+  const list = Array.isArray(item.carousel_media) ? item.carousel_media : null;
+  if (!list?.length) return null;
+  const items = list
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => !!entry);
+  return items.length ? items : null;
+}
+
+/**
+ * True when Instagram labeled this a carousel but only sent the cover (no children).
+ * Accepting those as a single photo is what made "carousel option" look broken.
+ */
+function isIncompleteCarousel(item: Record<string, unknown>): boolean {
+  if (carouselMediaList(item)) return false;
+  const sidecar = asRecord(item.edge_sidecar_to_children);
+  const edges = Array.isArray(sidecar?.edges) ? sidecar.edges : [];
+  if (edges.length) return false;
+  return isCarouselType(item);
+}
+
 /** Convert GraphQL shortcode_media / sidecar nodes into the mobile item shape clipFromInstagramItem expects. */
 function fromShortcodeMedia(media: Record<string, unknown>): Record<string, unknown> | null {
-  const owner = asRecord(media.owner);
+  const owner = asRecord(media.owner) || asRecord(media.user);
   const captionEdges = asRecord(media.edge_media_to_caption);
   const captionEdgeList = Array.isArray(captionEdges?.edges) ? captionEdges.edges : [];
   const captionNode = asRecord(asRecord(captionEdgeList[0])?.node);
+  const captionText = str(captionNode?.text) || str(asRecord(media.caption)?.text);
   const sidecar = asRecord(media.edge_sidecar_to_children);
   const edges = Array.isArray(sidecar?.edges) ? sidecar.edges : [];
 
@@ -209,21 +240,52 @@ function fromShortcodeMedia(media: Record<string, unknown>): Record<string, unkn
     const dims = asRecord(node.dimensions);
     const videoUrl = cleanMediaUrl(str(node.video_url));
     const display = cleanMediaUrl(str(node.display_url) || str(node.display_uri));
+    const existingImages = asRecord(node.image_versions2);
+    const existingVideos = Array.isArray(node.video_versions) ? node.video_versions : null;
     const item: Record<string, unknown> = {
-      pk: str(node.id) || `${index}`,
-      id: str(node.id) || `${index}`,
+      pk: str(node.pk) || str(node.id) || `${index}`,
+      id: str(node.id) || str(node.pk) || `${index}`,
     };
-    if (videoUrl) {
-      item.video_versions = [{ url: videoUrl, width: num(dims?.width), height: num(dims?.height) }];
+    if (existingVideos?.length) {
+      item.video_versions = existingVideos;
+    } else if (videoUrl) {
+      item.video_versions = [{ url: videoUrl, width: num(dims?.width) || num(node.original_width), height: num(dims?.height) || num(node.original_height) }];
     }
-    if (display) {
+    if (existingImages && Array.isArray(existingImages.candidates) && existingImages.candidates.length) {
+      item.image_versions2 = existingImages;
+      item.display_uri = display || cleanMediaUrl(str(asRecord(existingImages.candidates[0])?.url));
+    } else if (display) {
       item.display_uri = display;
       item.image_versions2 = {
-        candidates: [{ url: display, width: num(dims?.width), height: num(dims?.height) }],
+        candidates: [
+          {
+            url: display,
+            width: num(dims?.width) || num(node.original_width),
+            height: num(dims?.height) || num(node.original_height),
+          },
+        ],
       };
     }
     return item;
   };
+
+  // Polaris / mobile payloads already ship carousel_media — keep those children.
+  const existingCarousel = carouselMediaList(media);
+  if (existingCarousel) {
+    const carousel_media = existingCarousel
+      .map((node, index) => toItem(node, index))
+      .filter((item) => !!(item.video_versions || item.image_versions2 || item.display_uri));
+    if (!carousel_media.length) return null;
+    return {
+      user: owner ? { username: str(owner.username) } : undefined,
+      caption: captionText ? { text: captionText } : undefined,
+      media_type: 8,
+      product_type: "carousel_container",
+      carousel_media,
+      image_versions2: asRecord(carousel_media[0]?.image_versions2),
+      display_uri: str(carousel_media[0]?.display_uri),
+    };
+  }
 
   if (edges.length) {
     const carousel_media = edges
@@ -235,18 +297,23 @@ function fromShortcodeMedia(media: Record<string, unknown>): Record<string, unkn
     if (!carousel_media.length) return null;
     return {
       user: owner ? { username: str(owner.username) } : undefined,
-      caption: captionNode ? { text: str(captionNode.text) } : undefined,
+      caption: captionText ? { text: captionText } : undefined,
+      media_type: 8,
+      product_type: "carousel_container",
       carousel_media,
       image_versions2: asRecord(carousel_media[0]?.image_versions2),
       display_uri: str(carousel_media[0]?.display_uri),
     };
   }
 
+  // Carousel-typed parent with no children yet — don't flatten to a cover photo.
+  if (isIncompleteCarousel(media)) return null;
+
   const single = toItem(media, 0);
   if (!(single.video_versions || single.image_versions2 || single.display_uri)) return null;
   return {
     user: owner ? { username: str(owner.username) } : undefined,
-    caption: captionNode ? { text: str(captionNode.text) } : undefined,
+    caption: captionText ? { text: captionText } : undefined,
     ...single,
     video_duration: num(media.video_duration),
   };
@@ -275,27 +342,48 @@ async function instagramSession(code: string, kind: "reel" | "p" = "p"): Promise
   return { pageUrl, cookies, csrf, lsd: extractLsd(html) };
 }
 
+function usableInstagramItem(item: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!item) return null;
+  // Cover-only carousel responses must not short-circuit richer fallbacks.
+  if (isIncompleteCarousel(item)) return null;
+  if (carouselMediaList(item)) return item;
+  if (item.video_versions || item.image_versions2 || item.display_uri || item.display_url) return item;
+  return null;
+}
+
 function instagramItem(json: Record<string, unknown> | null): Record<string, unknown> | null {
   const data = asRecord(json?.data) || asRecord(asRecord(json?.gql_data));
   if (!data) {
     // Mobile media/info returns { items: [...] } at the top level.
     const items = Array.isArray(json?.items) ? json.items : [];
-    const first = asRecord(items[0]);
-    if (first && (first.video_versions || first.image_versions2 || first.carousel_media || first.display_uri)) return first;
-    return null;
+    return usableInstagramItem(asRecord(items[0]));
   }
   const web = asRecord(data.xdt_api__v1__media__shortcode__web_info);
   const items = Array.isArray(web?.items) ? web.items : [];
-  const first = asRecord(items[0]);
-  if (first && (first.video_versions || first.image_versions2 || first.carousel_media || first.display_uri)) return first;
+  const webItem = usableInstagramItem(asRecord(items[0]));
+  if (webItem) {
+    // Prefer an already-populated carousel_media list; otherwise normalize Graph shapes.
+    if (carouselMediaList(webItem)) return webItem;
+    const normalizedWeb = fromShortcodeMedia(webItem);
+    if (normalizedWeb) return normalizedWeb;
+    return webItem;
+  }
+
   const polaris = asRecord(data.xig_polaris_media);
   const gated = polaris ? asRecord(polaris.if_not_gated_logged_out) || asRecord(polaris.if_not_gated) : null;
   if (gated) {
+    // Polaris carousel payloads often include carousel_media already — keep them.
+    if (carouselMediaList(gated)) return gated;
     const fromGated = fromShortcodeMedia(gated);
     if (fromGated) return fromGated;
-    if (gated.video_versions || gated.image_versions2 || gated.carousel_media) return gated;
+    return usableInstagramItem(gated);
   }
-  if (polaris && (polaris.video_versions || polaris.image_versions2 || polaris.carousel_media)) return polaris;
+  if (polaris) {
+    if (carouselMediaList(polaris)) return polaris;
+    const fromPolaris = fromShortcodeMedia(polaris);
+    if (fromPolaris) return fromPolaris;
+    return usableInstagramItem(polaris);
+  }
 
   const shortcode = asRecord(data.xdt_shortcode_media) || asRecord(data.shortcode_media);
   if (shortcode) {
@@ -473,6 +561,56 @@ async function instagramMobileInfo(mediaId: string): Promise<Record<string, unkn
   return instagramItem(json);
 }
 
+function decodeEmbedUrl(raw: string): string {
+  return raw.replace(/\\u0026/g, "&").replace(/&amp;/g, "&").replace(/\\\//g, "/");
+}
+
+function collectEmbedStills(html: string): string[] {
+  const found: string[] = [];
+  const push = (raw: string | undefined) => {
+    if (!raw) return;
+    const url = cleanMediaUrl(decodeEmbedUrl(raw));
+    if (!url) return;
+    if (!(/\/v\/t\d+/i.test(url) || /stp=/.test(url))) return;
+    // Drop profile avatars and tiny thumbs — keep full carousel stills.
+    if (/\/s150x150\//i.test(url) || /\/s240x240\//i.test(url) || /profile/i.test(url)) return;
+    found.push(url);
+  };
+
+  for (const match of html.matchAll(/https:\/\/[^"'\\\s]+cdninstagram\.com\/[^"'\\\s]+/gi)) push(match[0]);
+  for (const match of html.matchAll(/https:\\\/\\\/[^"'\\\s]+cdninstagram\.com\\\/[^"']+/gi)) push(match[0]);
+  for (const match of html.matchAll(/src="(https:\/\/[^"]+cdninstagram\.com[^"]+)"/gi)) push(match[1]);
+  for (const match of html.matchAll(/"display_url":"(https:[^"]+)"/g)) push(match[1]);
+  for (const match of html.matchAll(/\\"display_url\\":\\"(https:[^\\]+)\\"/g)) push(match[1]);
+
+  return [...new Set(found)].slice(0, 20);
+}
+
+function parseEmbedContext(html: string): Record<string, unknown> | null {
+  // Embed packs media into: "init",[],[{... contextJSON ...}],
+  const candidates: string[] = [];
+  const initMatch = html.match(/"init",\[\],\[(.*?)\]\],/);
+  if (initMatch?.[1]) candidates.push(initMatch[1]);
+  // Fallback when the compact init regex misses a larger payload.
+  const richIdx = html.indexOf('"isRichEmbed":true');
+  if (richIdx >= 0) {
+    const slice = html.slice(richIdx - 1, richIdx + 200_000);
+    const end = slice.indexOf("]}],");
+    if (end > 0) candidates.push(slice.slice(0, end + 1));
+  }
+  for (const raw of candidates) {
+    try {
+      const packed = JSON.parse(raw) as Record<string, unknown>;
+      const contextRaw = str(packed.contextJSON);
+      if (!contextRaw) continue;
+      return asRecord(JSON.parse(contextRaw));
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
 async function instagramFromEmbed(code: string, sourceUrl: string): Promise<ClipMedia | null> {
   const paths = [`/p/${code}/embed/captioned/`, `/reel/${code}/embed/captioned/`, `/p/${code}/embed/`, `/reel/${code}/embed/`];
   for (const path of paths) {
@@ -482,40 +620,30 @@ async function instagramFromEmbed(code: string, sourceUrl: string): Promise<Clip
       continue;
     }
     const html = await response.text();
-    // Embed packs media into: "init",[],[{... contextJSON ...}],
-    const initMatch = html.match(/"init",\[\],\[(.*?)\]\],/);
-    if (initMatch?.[1]) {
+    const context = parseEmbedContext(html);
+    if (context) {
       try {
-        const packed = JSON.parse(initMatch[1]) as Record<string, unknown>;
-        const contextRaw = str(packed.contextJSON);
-        if (contextRaw) {
-          const context = asRecord(JSON.parse(contextRaw));
-          const gql = asRecord(context?.gql_data) || context;
-          const media =
-            asRecord(gql?.shortcode_media) ||
-            asRecord(gql?.xdt_shortcode_media) ||
-            asRecord(asRecord(gql?.gql_data)?.shortcode_media) ||
-            asRecord(asRecord(gql?.gql_data)?.xdt_shortcode_media);
-          if (media) {
-            const normalized = fromShortcodeMedia(media);
-            if (normalized) return clipFromInstagramItem(normalized, sourceUrl, code);
-          }
-          // Newer embeds sometimes put carousel/video fields on the context root.
-          if (context && (context.carousel_media || context.video_versions || context.image_versions2)) {
-            return clipFromInstagramItem(context, sourceUrl, code);
-          }
+        const gql = asRecord(context.gql_data) || context;
+        const media =
+          asRecord(gql?.shortcode_media) ||
+          asRecord(gql?.xdt_shortcode_media) ||
+          asRecord(asRecord(gql?.gql_data)?.shortcode_media) ||
+          asRecord(asRecord(gql?.gql_data)?.xdt_shortcode_media);
+        if (media) {
+          const normalized = fromShortcodeMedia(media);
+          if (normalized) return clipFromInstagramItem(normalized, sourceUrl, code);
+        }
+        // Newer embeds sometimes put carousel/video fields on the context root.
+        if (context.carousel_media || context.video_versions || context.image_versions2) {
+          return clipFromInstagramItem(context, sourceUrl, code);
         }
       } catch {
-        /* try next path */
+        /* try CDN scrape / next path */
       }
     }
 
     // Last-resort: collect CDN stills from the embed HTML (carousels often expose multiple).
-    const urls = [...html.matchAll(/https:\/\/[^"'\\\s]+cdninstagram\.com\/[^"'\\\s]+/gi)]
-      .map((match) => match[0].replace(/\\u0026/g, "&").replace(/\\\//g, "/"))
-      .filter((url) => /\/v\/t\d+/i.test(url) || /stp=/.test(url))
-      .filter((url) => !/\/s150x150\//i.test(url) && !/profile/i.test(url));
-    const unique = [...new Set(urls.map((url) => cleanMediaUrl(url) || url))].slice(0, 20);
+    const unique = collectEmbedStills(html);
     if (unique.length >= 2) {
       return {
         platform: "instagram",
@@ -643,13 +771,12 @@ async function resolveInstagram(raw: string): Promise<ClipMedia> {
       if (polarisItem) return clipFromInstagramItem(polarisItem, sourceUrl, code);
       if (polaris.json && instagramFailure(polaris.json) === "private") return "private" as const;
 
-      if (attempt === 0) {
-        const legacy = await instagramByMediaId(session, code);
-        if (legacy.status === 429) return "rate" as const;
-        const legacyItem = instagramItem(legacy.json);
-        if (legacyItem) return clipFromInstagramItem(legacyItem, sourceUrl, code);
-        if (legacy.json && instagramFailure(legacy.json) === "private") return "private" as const;
-      }
+      // Polaris media-id doc is the one that usually returns carousel_media children.
+      const legacy = await instagramByMediaId(session, code);
+      if (legacy.status === 429) return "rate" as const;
+      const legacyItem = instagramItem(legacy.json);
+      if (legacyItem) return clipFromInstagramItem(legacyItem, sourceUrl, code);
+      if (legacy.json && instagramFailure(legacy.json) === "private") return "private" as const;
       return "retry" as const;
     });
     if (typeof outcome !== "string") return outcome;
