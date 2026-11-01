@@ -307,60 +307,46 @@
   stroke: none;
 }
 
-.brand-wordmark-ink {
+.brand-wordmark-trace {
   fill: none;
-  stroke: #2f6fdb;
-  stroke-width: 2.7;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+  stroke: transparent;
+  stroke-width: 1;
+  pointer-events: none;
 }
 
-.brand-wordmark-wake {
-  fill: none;
-  stroke: color-mix(in oklab, #9ec5ff 70%, var(--color-accent));
-  stroke-width: 5.5;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  opacity: 0.55;
-}
-
-.brand-wordmark-tip {
-  fill: none;
-  stroke: #ffffff;
-  stroke-width: 4.4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.brand-trace-bead {
-  position: absolute;
+.brand-slime {
+  position: fixed;
   top: 0;
   left: 0;
-  z-index: 3;
-  width: 15px;
-  height: 15px;
-  margin: -7.5px 0 0 -7.5px;
-  border-radius: 999px;
+  z-index: 60;
+  width: 9px;
+  height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 62% 38% 58% 42% / 42% 58% 38% 62%;
   pointer-events: none;
   opacity: 0;
   background:
-    radial-gradient(circle at 32% 28%, #fff 0%, #dbeafe 28%, #6babff 58%, transparent 76%);
+    radial-gradient(circle at 30% 28%, #ffffff 0%, #b7d4ff 32%, #4f8fff 68%, #2563eb 100%);
   box-shadow:
-    0 0 12px 4px color-mix(in oklab, var(--color-accent-bright) 90%, transparent),
-    0 0 28px 10px color-mix(in oklab, var(--color-accent) 55%, transparent);
-  will-change: transform, opacity;
+    0 0 8px 2px color-mix(in oklab, var(--color-accent-bright) 85%, transparent),
+    0 0 18px 6px color-mix(in oklab, var(--color-accent) 45%, transparent),
+    inset 0 0 4px color-mix(in oklab, white 55%, transparent);
+  will-change: transform, opacity, border-radius;
   transform: translate3d(0, 0, 0);
+  animation: slime-blob 1.35s ease-in-out infinite;
 }
 
-.brand-trace-bead-soft {
-  z-index: 2;
-  width: 28px;
-  height: 28px;
-  margin: -14px 0 0 -14px;
-  background:
-    radial-gradient(circle at 50% 50%, color-mix(in oklab, #9ec5ff 70%, transparent), transparent 72%);
-  box-shadow: none;
-  filter: blur(1.5px);
+@keyframes slime-blob {
+  0%,
+  100% {
+    border-radius: 62% 38% 58% 42% / 42% 58% 38% 62%;
+  }
+  33% {
+    border-radius: 40% 60% 45% 55% / 55% 40% 60% 45%;
+  }
+  66% {
+    border-radius: 55% 45% 35% 65% / 48% 62% 38% 52%;
+  }
 }
 
 @keyframes mark-in {
@@ -673,7 +659,7 @@
 /* ——— Result / how-to / recent ——— */
 
 .result-card {
-  overflow: hidden;
+  overflow: visible;
   border-radius: 1.25rem;
   padding: 0.75rem;
   background:
@@ -964,14 +950,26 @@
 
 /* ——— Toasts ——— */
 
+.clip-toaster,
+[data-sonner-toaster].clip-toaster,
+[data-sonner-toaster] {
+  z-index: 2147483000 !important;
+  pointer-events: none;
+}
+
+[data-sonner-toaster] [data-sonner-toast] {
+  pointer-events: auto;
+}
+
 .clip-toast {
   position: relative !important;
+  z-index: 2147483000 !important;
   overflow: visible !important;
   gap: 12px !important;
   padding: 12px 14px !important;
   border-radius: 16px !important;
   border: 1px solid color-mix(in oklab, var(--color-accent) 32%, var(--color-border)) !important;
-  background: color-mix(in oklab, var(--color-surface-2) 90%, transparent) !important;
+  background: color-mix(in oklab, var(--color-surface-2) 94%, transparent) !important;
   -webkit-backdrop-filter: blur(16px);
   backdrop-filter: blur(16px);
   box-shadow:
@@ -1141,10 +1139,7 @@
   .mark-arrow,
   .mark-ring,
   .brand-title,
-  .brand-wordmark-ink,
-  .brand-wordmark-wake,
-  .brand-wordmark-tip,
-  .brand-trace-bead,
+  .brand-slime,
   .chip-live,
   .segment[data-active="true"],
   .photo-tile[data-focused="true"],
@@ -1174,16 +1169,9 @@
     transform: none !important;
   }
 
-  .brand-wordmark-ink {
-    stroke-dasharray: none !important;
-    stroke-dashoffset: 0 !important;
-    opacity: 0.85 !important;
-  }
-
-  .brand-wordmark-wake,
-  .brand-wordmark-tip,
-  .brand-trace-bead {
+  .brand-slime {
     display: none !important;
+    animation: none !important;
   }
 
   .clip-toast-tick path {
