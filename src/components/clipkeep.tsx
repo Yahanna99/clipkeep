@@ -7,6 +7,7 @@ import { mapStaggered } from "@/lib/clip/pool";
 import { resolveClip } from "@/lib/clip/resolve";
 import type { ClipMedia, Platform, Variant } from "@/lib/clip/types";
 import { BrandTitle } from "@/components/brand-title";
+import { nextLogoDelayMs } from "@/lib/brand/slime";
 
 const HISTORY_KEY = "clipkeep.history.v1";
 
@@ -371,9 +372,40 @@ function ToastBadge({ tone }: { tone: ToastTone }) {
 }
 
 function Mark({ className = "size-14" }: { className?: string }) {
+  const [hop, setHop] = useState(false);
+  const scheduleRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (motion.matches) return;
+    let timer = 0;
+    let alive = true;
+    const schedule = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        if (alive) setHop(true);
+      }, nextLogoDelayMs());
+    };
+    scheduleRef.current = schedule;
+    schedule();
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+      scheduleRef.current = () => {};
+    };
+  }, []);
+
   return (
-    <span className={`mark-wrap ${className}`} aria-hidden="true">
-      <svg viewBox="0 0 100 100" className="mark-svg text-accent">
+    <span className={`mark-wrap ${className}${hop ? " is-bouncing" : ""}`} aria-hidden="true">
+      <svg
+        viewBox="0 0 100 100"
+        className="mark-svg text-accent"
+        onAnimationEnd={(event) => {
+          if (event.animationName !== "mark-hop") return;
+          setHop(false);
+          scheduleRef.current();
+        }}
+      >
         <defs>
           <linearGradient id="mark-glow" x1="20" y1="10" x2="80" y2="90" gradientUnits="userSpaceOnUse">
             <stop stopColor="#6babff" />
