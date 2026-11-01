@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -144,10 +151,7 @@ test("__root.tsx og:type no longer satisfies the canvas gate", () => {
     narrowFile: "x-banner.jpg",
   });
   mkdirSync(join(root, "src/routes"), { recursive: true });
-  writeFileSync(
-    join(root, "src/routes/__root.tsx"),
-    '{ property: "og:type", content: "x:game" }',
-  );
+  writeFileSync(join(root, "src/routes/__root.tsx"), '{ property: "og:type", content: "x:game" }');
   const warnings = computeBrandWarnings({ hasCanvas: true, workspaceRoot: root });
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /x:game/);
@@ -305,14 +309,27 @@ test("cli: a non-game with a compliant card passes", () => {
 
 const readDoc = (rel) => readFileSync(join(TEMPLATE_ROOT, rel), "utf8");
 
-test("SKILL.md and AGENTS.md name the marker path and bound this script uses", () => {
+const OG_SKILL_REL = ".grok/skills/og/SKILL.md";
+// The og skill ships in the gitignored `.grok/` tree. A clean checkout does not
+// have it; when it is present, still pin the script to that prose.
+const OG_SKILL_SKIP = existsSync(join(TEMPLATE_ROOT, OG_SKILL_REL))
+  ? false
+  : ".grok/skills/og/ is gitignored and not in this checkout";
+
+function assertDocNamesMarker(rel) {
   // Prose wraps, so the minute count may straddle a line break.
   const bound = new RegExp(`${OG_PENDING_MAX_AGE_MS / 60_000}\\s+minutes`);
-  for (const rel of [".grok/skills/og/SKILL.md", "AGENTS.md"]) {
-    const doc = readDoc(rel);
-    assert.ok(doc.includes(`/workspace/${OG_PENDING_REL_PATH}`), `${rel}: marker path`);
-    assert.ok(bound.test(doc), `${rel}: staleness bound`);
-  }
+  const doc = readDoc(rel);
+  assert.ok(doc.includes(`/workspace/${OG_PENDING_REL_PATH}`), `${rel}: marker path`);
+  assert.ok(bound.test(doc), `${rel}: staleness bound`);
+}
+
+test("AGENTS.md names the marker path and bound this script uses", () => {
+  assertDocNamesMarker("AGENTS.md");
+});
+
+test("SKILL.md names the marker path and bound this script uses", { skip: OG_SKILL_SKIP }, () => {
+  assertDocNamesMarker(OG_SKILL_REL);
 });
 
 // The two places that own "never wait on the brand task". Scanning the whole
@@ -320,7 +337,7 @@ test("SKILL.md and AGENTS.md name the marker path and bound this script uses", (
 // feature adds to it this test's business.
 const PROHIBITION_SECTIONS = [
   {
-    rel: ".grok/skills/og/SKILL.md",
+    rel: OG_SKILL_REL,
     label: '§ "Brand-asset pass"',
     from: "## Brand-asset pass:",
     until: /\n## /,
@@ -340,34 +357,50 @@ function prohibitionSection({ rel, label, from, until }) {
   const rest = doc.slice(start + from.length);
   const end = rest.search(until);
   // Markdown emphasis and prose wrapping both sit between the two words.
-  return (from + (end === -1 ? rest : rest.slice(0, end))).replace(/[`*]/g, "").replace(/\s+/g, " ");
+  return (from + (end === -1 ? rest : rest.slice(0, end)))
+    .replace(/[`*]/g, "")
+    .replace(/\s+/g, " ");
 }
 
-test("the sections that own the brand-task prohibition never affirm a wait", () => {
+function assertSectionNeverAffirmsWait(section) {
   // Pinned on the shape of the prohibition, not on a negation being somewhere
   // nearby: "So: wait_tasks before the final verify, but never get_task_output"
   // keeps a negation in the sentence while instructing exactly the wait.
   const connectors = /(?:\s|[/,;]|\band\b|\bor\b|\bwait_tasks\b|\bget_task_output\b)+$/i;
   const negation = /\b(?:no|never|not|don['’]t)$/i;
-  for (const section of PROHIBITION_SECTIONS) {
-    const where = `${section.rel} ${section.label}`;
-    const prose = prohibitionSection(section);
-    const mentions = [...prose.matchAll(/wait_tasks|get_task_output/g)];
-    assert.ok(mentions.length >= 2, `${where}: the prohibition itself went missing`);
-    for (const match of mentions) {
-      const before = prose.slice(0, match.index).replace(connectors, "");
-      const context = prose.slice(Math.max(0, match.index - 60), match.index + 20);
-      assert.ok(negation.test(before), `${where}: not a prohibition: …${context}…`);
-    }
+  const where = `${section.rel} ${section.label}`;
+  const prose = prohibitionSection(section);
+  const mentions = [...prose.matchAll(/wait_tasks|get_task_output/g)];
+  assert.ok(mentions.length >= 2, `${where}: the prohibition itself went missing`);
+  for (const match of mentions) {
+    const before = prose.slice(0, match.index).replace(connectors, "");
+    const context = prose.slice(Math.max(0, match.index - 60), match.index + 20);
+    assert.ok(negation.test(before), `${where}: not a prohibition: …${context}…`);
   }
+}
+
+test("AGENTS.md never tells the brand pass to wait on the task", () => {
+  assertSectionNeverAffirmsWait(
+    PROHIBITION_SECTIONS.find((section) => section.rel === "AGENTS.md"),
+  );
 });
 
-test("SKILL.md tells the pass to self-check with the flag this CLI accepts", () => {
-  const skill = readDoc(".grok/skills/og/SKILL.md");
-  const invocations = skill.match(/node scripts\/brand-check\.mjs[^\n`]*/g) ?? [];
-  assert.ok(invocations.length > 0);
-  for (const line of invocations) {
-    const argv = line.replace("node scripts/brand-check.mjs", "").trim().split(/\s+/);
-    assert.equal(parseBrandCheckArgs(argv.filter(Boolean)).error, undefined, line);
-  }
+test("the og skill never tells the brand pass to wait on the task", { skip: OG_SKILL_SKIP }, () => {
+  assertSectionNeverAffirmsWait(
+    PROHIBITION_SECTIONS.find((section) => section.rel === OG_SKILL_REL),
+  );
 });
+
+test(
+  "SKILL.md tells the pass to self-check with the flag this CLI accepts",
+  { skip: OG_SKILL_SKIP },
+  () => {
+    const skill = readDoc(OG_SKILL_REL);
+    const invocations = skill.match(/node scripts\/brand-check\.mjs[^\n`]*/g) ?? [];
+    assert.ok(invocations.length > 0);
+    for (const line of invocations) {
+      const argv = line.replace("node scripts/brand-check.mjs", "").trim().split(/\s+/);
+      assert.equal(parseBrandCheckArgs(argv.filter(Boolean)).error, undefined, line);
+    }
+  },
+);
