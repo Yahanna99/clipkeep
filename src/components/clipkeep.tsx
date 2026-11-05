@@ -7,7 +7,7 @@ import { mapStaggered } from "@/lib/clip/pool";
 import { resolveClip } from "@/lib/clip/resolve";
 import type { ClipMedia, Platform, Variant } from "@/lib/clip/types";
 import { BrandTitle } from "@/components/brand-title";
-import { nextLogoDelayMs } from "@/lib/brand/slime";
+import { allTargetsOf, videoGroups } from "@/lib/clip/targets";
 
 const HISTORY_KEY = "clipkeep.history.v1";
 
@@ -42,25 +42,8 @@ function imagesOf(media: ClipMedia): Variant[] {
   return media.variants.filter((variant) => variant.kind === "image");
 }
 
-function videosOf(media: ClipMedia): Variant[] {
-  return media.variants.filter((variant) => variant.kind === "video");
-}
-
 function audiosOf(media: ClipMedia): Variant[] {
   return media.variants.filter((variant) => variant.kind === "audio");
-}
-
-function videoGroups(media: ClipMedia): Variant[][] {
-  const groups = new Map<string, Variant[]>();
-  for (const variant of videosOf(media)) {
-    const key = variant.group || variant.id;
-    const list = groups.get(key);
-    if (list) list.push(variant);
-    else groups.set(key, [variant]);
-  }
-  return [...groups.values()].map((group) =>
-    [...group].sort((a, b) => (b.height || 0) - (a.height || 0) || (b.bitrate || 0) - (a.bitrate || 0)),
-  );
 }
 
 function bestVariant(media: ClipMedia): Variant {
@@ -79,6 +62,11 @@ function fileName(media: ClipMedia, variant: Variant): string {
   const what = slug(media.title, variant.kind);
   if (variant.kind === "image") {
     return `${who}-${what}-${String(variant.index ?? 1).padStart(2, "0")}.${variant.ext}`;
+  }
+  // Numbered videos (a Live Photo's motion clips) need distinct names, or
+  // they'd overwrite each other inside a zip or a share.
+  if (variant.kind === "video" && variant.index != null) {
+    return `${who}-${what}-${String(variant.index).padStart(2, "0")}.${variant.ext}`;
   }
   return `${who}-${what}.${variant.ext}`;
 }
@@ -371,10 +359,14 @@ function ToastBadge({ tone }: { tone: ToastTone }) {
   );
 }
 
+/** The download mark hops every 10–15s, on its own schedule. */
+function nextMarkDelayMs(random: () => number = Math.random) {
+  return 10_000 + random() * 5_000;
+}
+
 function Mark({ className = "size-14" }: { className?: string }) {
   const [hop, setHop] = useState(false);
   const scheduleRef = useRef<() => void>(() => {});
-
   useEffect(() => {
     const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
     if (motion.matches) return;
@@ -384,7 +376,7 @@ function Mark({ className = "size-14" }: { className?: string }) {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
         if (alive) setHop(true);
-      }, nextLogoDelayMs());
+      }, nextMarkDelayMs());
     };
     scheduleRef.current = schedule;
     schedule();
@@ -463,6 +455,7 @@ export function Clipkeep() {
   const [media, setMedia] = useState<ClipMedia | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [picked, setPicked] = useState<string[]>([]);
+  const [saveAll, setSaveAll] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [ready, setReady] = useState<ReadyFile | null>(null);
   const [preparing, setPreparing] = useState(false);
@@ -482,12 +475,22 @@ export function Clipkeep() {
   const selected = media?.variants.find((variant) => variant.id === selectedId) ?? (media ? bestVariant(media) : null);
   const photos = media ? imagesOf(media) : [];
   const groups = media ? videoGroups(media) : [];
+  const allTargets = useMemo(() => (media ? allTargetsOf(media) : []), [media]);
+  const allCount = allTargets.length;
   const selectedGroup = selected?.kind === "video" ? groups.find((group) => group.some((item) => item.id === selected.id)) : null;
   const showKindToggle = (photos.length > 0 && groups.length > 0) || groups.length > 1;
   const photoMode = selected?.kind === "image" && photos.length > 0;
   const selectedPhotos = photos.filter((photo) => picked.includes(photo.id));
-  const saveCount = photoMode ? selectedPhotos.length : 1;
-  const saveLabel = photoMode ? (saveCount === 1 ? "Save photo" : `Save ${saveCount} photos`) : `Save ${selected?.kind ?? "file"}`;
+  const saveCount = saveAll ? allCount : photoMode ? selectedPhotos.length : 1;
+  const saveLabel = saveAll
+    ? allCount > 1
+      ? `Save all (${allCount} files)`
+      : "Save file"
+    : photoMode
+      ? saveCount === 1
+        ? "Save photo"
+        : `Save ${saveCount} photos`
+      : `Save ${selected?.kind ?? "file"}`;
   const downloadName = media && selected ? fileName(media, selected) : "clipkeep";
 
   useEffect(() => {
@@ -559,6 +562,7 @@ export function Clipkeep() {
     setMedia(null);
     setSelectedId(null);
     setPicked([]);
+    setSaveAll(false);
     clearReady();
     let message = "Couldn’t read that link.";
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -595,9 +599,10 @@ export function Clipkeep() {
 
   const prepareKey = useMemo(() => {
     if (!media || !selected) return "";
+    if (saveAll) return `all:${allTargets.map((item) => item.id).sort().join(",")}`;
     if (photoMode) return `img:${[...picked].sort().join(",")}`;
     return `one:${selected.id}`;
-  }, [media, selected, photoMode, picked]);
+  }, [media, selected, photoMode, picked, saveAll, allTargets]);
 
   useLayoutEffect(() => {
     if (!media || !selected || saveCount === 0) {
@@ -606,7 +611,7 @@ export function Clipkeep() {
       return;
     }
     const source = media;
-    const targets = photoMode ? selectedPhotos : [selected];
+    const targets = saveAll ? allTargets : photoMode ? selectedPhotos : [selected];
     let cancelledRun = false;
     setPreparing(true);
     setSaveFault(null);
@@ -618,7 +623,10 @@ export function Clipkeep() {
         const file =
           files.length === 1
             ? files[0]
-            : await zipFiles(files, `${slug(source.authorHandle || source.author, "clipkeep")}-photos.zip`);
+            : await zipFiles(
+                files,
+                `${slug(source.authorHandle || source.author, "clipkeep")}-${saveAll ? "all" : "photos"}.zip`,
+              );
         if (cancelledRun) return;
         const url = URL.createObjectURL(file);
         readyUrl.current = url;
@@ -698,15 +706,25 @@ export function Clipkeep() {
       // returns, so reading it inside the async catch throws and the fallback
       // download never fires on iOS.
       const href = event.currentTarget.getAttribute("href");
+      const allImages = shareFiles.every((file) => file.type.startsWith("image/"));
       void navigator
         .share({ files: shareFiles })
         .then(() => {
-          toast.success(shareFiles.length > 1 ? `${shareFiles.length} photos ready` : "Ready to save", {
-            description:
-              shareFiles.length > 1
-                ? "Tap Save Images to add them to Photos."
-                : "Tap Save Video or Save Image in the share sheet.",
-          });
+          toast.success(
+            shareFiles.length > 1
+              ? allImages
+                ? `${shareFiles.length} photos ready`
+                : `${shareFiles.length} files ready`
+              : "Ready to save",
+            {
+              description:
+                shareFiles.length > 1
+                  ? allImages
+                    ? "Tap Save Images to add them to Photos."
+                    : "Tap Save Images or Save Video in the share sheet to add them to Photos."
+                  : "Tap Save Video or Save Image in the share sheet.",
+            },
+          );
         })
         .catch((caught: unknown) => {
           if (cancelled(caught)) return;
@@ -802,7 +820,7 @@ export function Clipkeep() {
               Clipkeep saves Instagram reels, keeps TikToks watermark-free, grabs videos from X, pulls every carousel still, and downloads original quality.
             </p>
             <p className="reveal reveal-delay-3 mt-5 max-w-md text-base leading-relaxed text-muted">
-              Paste a public post. Save the video, one photo, or every still — original quality, watermark-free.
+              Paste a public post. Save the video, one photo, every still — or everything at once. Original quality, watermark-free.
             </p>
             <form
               className="reveal reveal-delay-4 mt-8"
@@ -844,6 +862,7 @@ export function Clipkeep() {
                           setError(null);
                           setPicked([]);
                           setSelectedId(null);
+                          setSaveAll(false);
                           clearReady();
                           inputRef.current?.focus();
                         }}
@@ -963,7 +982,10 @@ export function Clipkeep() {
                     {photos.length > 0 ? (
                       <button
                         type="button"
-                        onClick={() => setSelectedId(photos[0].id)}
+                        onClick={() => {
+                          setSaveAll(false);
+                          setSelectedId(photos[0].id);
+                        }}
                         data-active={selected.kind === "image" ? "true" : "false"}
                         className="segment"
                       >
@@ -974,7 +996,10 @@ export function Clipkeep() {
                       <button
                         key={group[0].id}
                         type="button"
-                        onClick={() => setSelectedId(group[0].id)}
+                        onClick={() => {
+                          setSaveAll(false);
+                          setSelectedId(group[0].id);
+                        }}
                         data-active={selectedGroup === group ? "true" : "false"}
                         className="segment"
                       >
@@ -990,12 +1015,22 @@ export function Clipkeep() {
                     focusedId={selected.id}
                     picked={picked}
                     onFocus={(id) => {
+                      setSaveAll(false);
                       setSelectedId(id);
                       setPicked((current) => (current.includes(id) ? current : [...current, id]));
                     }}
-                    onToggle={(id) => setPicked((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]))}
-                    onAll={() => setPicked(photos.map((photo) => photo.id))}
-                    onNone={() => setPicked([])}
+                    onToggle={(id) => {
+                      setSaveAll(false);
+                      setPicked((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+                    }}
+                    onAll={() => {
+                      setSaveAll(false);
+                      setPicked(photos.map((photo) => photo.id));
+                    }}
+                    onNone={() => {
+                      setSaveAll(false);
+                      setPicked([]);
+                    }}
                   />
                 ) : null}
 
@@ -1005,7 +1040,10 @@ export function Clipkeep() {
                       <button
                         key={variant.id}
                         type="button"
-                        onClick={() => setSelectedId(variant.id)}
+                        onClick={() => {
+                          setSaveAll(false);
+                          setSelectedId(variant.id);
+                        }}
                         data-active={variant.id === selected.id ? "true" : "false"}
                         className="segment"
                       >
@@ -1021,7 +1059,10 @@ export function Clipkeep() {
                       <button
                         key={variant.id}
                         type="button"
-                        onClick={() => setSelectedId(variant.id)}
+                        onClick={() => {
+                          setSaveAll(false);
+                          setSelectedId(variant.id);
+                        }}
                         data-active={variant.id === selected.id ? "true" : "false"}
                         className="segment"
                       >
@@ -1049,6 +1090,17 @@ export function Clipkeep() {
                       {preparing && !ready ? "Preparing" : saveLabel}
                     </span>
                   </a>
+                  {allCount > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => setSaveAll((value) => !value)}
+                      aria-pressed={saveAll}
+                      className="btn-ghost pressable h-12 flex-1 sm:flex-none"
+                    >
+                      {saveAll ? <Check className="size-4" /> : <Download className="size-4" />}
+                      Save all ({allCount})
+                    </button>
+                  ) : null}
                   <a
                     href={proxyUrl(selected.url, downloadName)}
                     target="_blank"
@@ -1064,9 +1116,11 @@ export function Clipkeep() {
                     ? "Getting the file ready so the first save goes through."
                     : saveFault && !ready
                       ? saveFault
-                      : media.platform === "instagram"
-                        ? "On iPhone, Save opens the share sheet — tap Save Video or Save Image. If Photos doesn’t offer it, the file still downloads."
-                        : "On iPhone, Save puts it in Files or Photos."}
+                      : saveAll
+                        ? "Save all opens the share sheet — tap Save Images or Save Video to add everything to Photos at once. If Photos doesn’t offer it, the files download as one zip."
+                        : media.platform === "instagram"
+                          ? "On iPhone, Save opens the share sheet — tap Save Video or Save Image. If Photos doesn’t offer it, the file still downloads."
+                          : "On iPhone, Save puts it in Files or Photos."}
                 </p>
               </div>
             </article>
