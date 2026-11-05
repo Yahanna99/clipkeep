@@ -8,6 +8,7 @@ import {
   LOGO_DELAY_MAX_MS,
   LOGO_DELAY_MIN_MS,
   MOBILE_FONT_SIZE,
+  PLAY_MAX_MS,
   PLAY_MIN_MS,
   WORD,
   advanceSim,
@@ -129,7 +130,7 @@ describe("slime motion", () => {
       const delay = nextLogoDelayMs(() => i / 10);
       assert.ok(delay >= LOGO_DELAY_MIN_MS && delay <= LOGO_DELAY_MAX_MS);
       const play = randomPlayMs(() => i / 10);
-      assert.ok(play >= 1100 && play <= 1550);
+      assert.ok(play >= PLAY_MIN_MS && play <= PLAY_MAX_MS);
     }
   });
 });

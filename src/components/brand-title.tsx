@@ -185,8 +185,8 @@ export function BrandTitle() {
         launchTarget: (from) => {
           const rect = wrap.getBoundingClientRect();
           const fontSize = frame.fontSize * s;
-          let x = rect.left + from.x * s - fontSize * 0.28;
-          let y = rect.top + from.y * s - fontSize * 0.92;
+          let x = rect.left + from.x * s - fontSize * 0.12;
+          let y = rect.top + from.y * s - fontSize * 1.45;
           const pad = fontSize * 0.95;
           x = Math.min(window.innerWidth - pad, Math.max(pad, x));
           y = Math.min(window.innerHeight - pad, Math.max(pad, y));
