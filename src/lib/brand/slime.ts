@@ -6,20 +6,24 @@
  * getPointAtLength or reads layout per frame.
  */
 
+import { traceWordOutline } from "./outline.ts";
+
 export const WORD = "clipkeep";
 export const DESKTOP_FONT_SIZE = 72;
 export const MOBILE_FONT_SIZE = 52;
 export const LAUNCH_MS = 340;
 export const RETURN_MS = 420;
-export const PLAY_MIN_MS = 1100;
-export const PLAY_MAX_MS = 1550;
+export const PLAY_MIN_MS = 2600;
+export const PLAY_MAX_MS = 3400;
 export const LOGO_HOP_MS = 780;
 export const LOGO_DELAY_MIN_MS = 10_000;
 export const LOGO_DELAY_MAX_MS = 15_000;
 
 const SPACING = 1.8;
-const TRACE_SECONDS = 8.4;
+const TRACE_SECONDS = 4.2;
 const LETTER_SPACING = -0.04;
+/** Blob radius (× fontSize) used to offset the silhouette track outward. */
+const OUTLINE_BLOB_R = 0.32;
 
 export type Pt = { x: number; y: number };
 
@@ -683,6 +687,40 @@ export function buildBrandFrame(font: BrandFont, fontSize: number): BrandFrame {
   const filled = font.getPath(WORD, ox, oy, fontSize, options);
   const glyphs = font.getPaths(WORD, ox, oy, fontSize, options);
   const d = filled.toPathData(2).replace(/-?NaN/gi, "0");
+  const w = Math.ceil(box.x2 - box.x1 + pad * 2);
+  const h = Math.ceil(box.y2 - box.y1 + pad * 2);
+
+  // Silhouette track (browser only): the blob traces the word's outer
+  // outline, then jumps off, plays, and returns. Outside the browser
+  // (tests, SSR) traceWordOutline returns null and we fall back to the
+  // legacy contour-crawling track built below.
+  const outline = traceWordOutline(d, w, h, fontSize * OUTLINE_BLOB_R);
+  if (outline) {
+    const count = outline.length;
+    const xs = new Float32Array(count);
+    const ys = new Float32Array(count);
+    for (let i = 0; i < count; i += 1) {
+      xs[i] = outline[i].x;
+      ys[i] = outline[i].y;
+    }
+    const length = Math.max(SPACING, (count - 1) * SPACING);
+    return {
+      d,
+      w,
+      h,
+      fontSize,
+      track: {
+        xs,
+        ys,
+        letters: new Uint8Array(count),
+        count,
+        spacing: SPACING,
+        length,
+        speed: length / TRACE_SECONDS,
+      },
+    };
+  }
+
   const letters = glyphs.map((glyph) => shapesOf(readCommands(glyph)));
   const blockers = letters.flatMap((shapes) => shapes.map((shape) => shape.outer.poly));
 
@@ -754,8 +792,8 @@ export function buildBrandFrame(font: BrandFont, fontSize: number): BrandFrame {
   const length = Math.max(SPACING, (count - 1) * SPACING);
   return {
     d,
-    w: Math.ceil(box.x2 - box.x1 + pad * 2),
-    h: Math.ceil(box.y2 - box.y1 + pad * 2),
+    w,
+    h,
     fontSize,
     track: {
       xs: Float32Array.from(xs),

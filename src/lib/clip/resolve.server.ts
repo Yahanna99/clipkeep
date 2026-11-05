@@ -226,6 +226,20 @@ function isIncompleteCarousel(item: Record<string, unknown>): boolean {
   return isCarouselType(item);
 }
 
+/**
+ * How many slides Instagram says a carousel has, when the payload says so.
+ * Used to spot partial carousels (some children sent, fewer than labeled)
+ * so we can warn instead of silently presenting an incomplete gallery.
+ */
+function expectedCarouselCount(item: Record<string, unknown>): number | undefined {
+  const direct = num(item.carousel_media_count);
+  if (direct && direct > 0) return direct;
+  const sidecar = asRecord(item.edge_sidecar_to_children);
+  const edges = num(sidecar?.count);
+  if (edges && edges > 0) return edges;
+  return undefined;
+}
+
 /** Convert GraphQL shortcode_media / sidecar nodes into the mobile item shape clipFromInstagramItem expects. */
 function fromShortcodeMedia(media: Record<string, unknown>): Record<string, unknown> | null {
   const owner = asRecord(media.owner) || asRecord(media.user);
@@ -301,6 +315,9 @@ function fromShortcodeMedia(media: Record<string, unknown>): Record<string, unkn
       media_type: 8,
       product_type: "carousel_container",
       carousel_media,
+      // Keep the labeled slide count so partial carousels can warn instead
+      // of looking complete.
+      carousel_media_count: num(sidecar?.count),
       image_versions2: asRecord(carousel_media[0]?.image_versions2),
       display_uri: str(carousel_media[0]?.display_uri),
     };
@@ -719,6 +736,14 @@ function clipFromInstagramItem(
       ? num(asRecord(asRecord(info.clips_metadata)?.original_sound_info)?.duration_in_ms)! / 1000
       : undefined);
 
+  // Partial carousel: Instagram labeled more slides than it sent. Say so
+  // instead of presenting the gallery as complete.
+  const expected = carousel ? expectedCarouselCount(info) : undefined;
+  const notice =
+    expected && carousel && carousel.length < expected
+      ? `Instagram only sent ${carousel.length} of ${expected} slides this time. Tap Fetch again in a moment — the rest usually come through on the next try.`
+      : undefined;
+
   return {
     platform: "instagram",
     sourceUrl,
@@ -727,6 +752,7 @@ function clipFromInstagramItem(
     authorHandle,
     thumbnail: cover?.url,
     duration,
+    notice,
     variants,
   };
 }
@@ -888,6 +914,11 @@ async function resolveTikTok(raw: string): Promise<ClipMedia> {
   const name = str(author?.nickname) || handle || "TikTok";
   const title = str(data.title) || "TikTok";
   const images = Array.isArray(data.images) ? data.images.filter((item): item is string => typeof item === "string") : [];
+  // Live Photo motion videos ride alongside the stills in `live_images`
+  // (same order, one per slide). Without these, Live Photos save as plain photos.
+  const liveImages = Array.isArray(data.live_images)
+    ? data.live_images.filter((item): item is string => typeof item === "string")
+    : [];
   const variants: Variant[] = [];
   if (images.length) {
     images.forEach((url, index) => {
@@ -900,6 +931,18 @@ async function resolveTikTok(raw: string): Promise<ClipMedia> {
         index: index + 1,
         noWatermark: true,
       });
+      const motion = liveImages[index];
+      if (motion) {
+        variants.push({
+          id: `live-video-${index + 1}`,
+          kind: "video",
+          label: images.length > 1 ? `Live video ${index + 1}` : "Live video",
+          url: motion,
+          ext: "mp4",
+          index: index + 1,
+          noWatermark: true,
+        });
+      }
     });
   } else {
     const hd = str(data.hdplay);
