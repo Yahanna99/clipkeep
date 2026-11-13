@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Check, ClipboardPaste, Download, ExternalLink, Loader2, X } from "lucide-react";
+import { Check, ClipboardPaste, Download, ExternalLink, X } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { extractPostUrl, isConcretePost, isRedditHost, platformOf, slug } from "@/lib/clip/links";
 import { stampMp4Times } from "@/lib/clip/mp4";
@@ -334,7 +334,7 @@ function ToastBadge({ tone }: { tone: ToastTone }) {
   return (
     <span className="clip-toast-badge" data-tone={tone}>
       {tone === "loading" ? (
-        <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+        <BounceDots small />
       ) : (
         <svg
           viewBox="0 0 24 24"
@@ -355,6 +355,17 @@ function ToastBadge({ tone }: { tone: ToastTone }) {
           )}
         </svg>
       )}
+    </span>
+  );
+}
+
+/** Three dots that hop in sequence — the spring system's answer to a spinner. */
+function BounceDots({ small = false }: { small?: boolean }) {
+  return (
+    <span className={`bounce-dots${small ? " bounce-dots-sm" : ""}`} aria-hidden="true">
+      <span />
+      <span />
+      <span />
     </span>
   );
 }
@@ -832,7 +843,7 @@ export function Clipkeep() {
               <label htmlFor="clip-url" className="sr-only">
                 Post link
               </label>
-              <div className="composer">
+              <div className={status === "error" ? "composer composer-wiggle" : "composer"}>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                   <div className="relative min-w-0 flex-1">
                     <input
@@ -888,7 +899,7 @@ export function Clipkeep() {
                     >
                       {status === "loading" ? (
                         <>
-                          <Loader2 className="size-4 animate-spin" />
+                          <BounceDots />
                           Reading
                         </>
                       ) : (
@@ -1086,7 +1097,7 @@ export function Clipkeep() {
                       key={preparing && !ready ? "preparing" : "ready"}
                       className="save-label inline-flex items-center gap-2"
                     >
-                      {preparing && !ready ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                      {preparing && !ready ? <BounceDots /> : <Download className="size-4" />}
                       {preparing && !ready ? "Preparing" : saveLabel}
                     </span>
                   </a>
@@ -1190,7 +1201,7 @@ function PhotoGrid({
           const on = picked.includes(photo.id);
           const number = photo.index ?? index + 1;
           return (
-            <li key={photo.id} className="photo-tile" data-focused={photo.id === focusedId ? "true" : "false"}>
+            <li key={photo.id} className="photo-tile tile-in" style={{ animationDelay: `${Math.min(index, 11) * 45}ms` }} data-focused={photo.id === focusedId ? "true" : "false"}>
               <button type="button" className="block aspect-[3/4] w-full" onClick={() => onFocus(photo.id)} aria-label={`View photo ${number}`}>
                 <img src={proxyUrl(photo.url, `photo-${number}.jpg`)} alt="" className="size-full object-cover" />
               </button>

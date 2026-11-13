@@ -1082,6 +1082,101 @@
   }
 }
 
+/* ——— Bounce pass: tile cascade, loading dots, error wiggle ——— */
+
+.tile-in {
+  animation: tile-in 520ms var(--ease-spring) both;
+}
+
+@keyframes tile-in {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scale(0.82);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-3px) scale(1.03);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.bounce-dots {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 14px;
+}
+
+.bounce-dots > span {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: dot-hop 900ms var(--ease-spring) infinite;
+}
+
+.bounce-dots > span:nth-child(2) {
+  animation-delay: 120ms;
+}
+
+.bounce-dots > span:nth-child(3) {
+  animation-delay: 240ms;
+}
+
+.bounce-dots-sm {
+  height: 10px;
+  gap: 2px;
+}
+
+.bounce-dots-sm > span {
+  width: 4px;
+  height: 4px;
+}
+
+@keyframes dot-hop {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  30% {
+    transform: translateY(-5px) scale(0.9, 1.12);
+  }
+  55% {
+    transform: translateY(0) scale(1.18, 0.82);
+  }
+  72% {
+    transform: translateY(-2px) scale(1, 1);
+  }
+}
+
+.composer-wiggle {
+  animation: wiggle 520ms var(--ease-spring) both;
+}
+
+@keyframes wiggle {
+  0% {
+    transform: translateX(0) rotate(0deg);
+  }
+  18% {
+    transform: translateX(-7px) rotate(-0.7deg);
+  }
+  38% {
+    transform: translateX(6px) rotate(0.6deg);
+  }
+  58% {
+    transform: translateX(-4px) rotate(-0.4deg);
+  }
+  78% {
+    transform: translateX(2px) rotate(0.2deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .hero-orb,
   .hero-orbit-card::before,
@@ -1113,7 +1208,10 @@
   .howto-item,
   .recent-card,
   .composer,
-  .segment {
+  .segment,
+  .tile-in,
+  .composer-wiggle,
+  .bounce-dots > span {
     animation: none !important;
     transition: none !important;
   }

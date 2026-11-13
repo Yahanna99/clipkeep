@@ -117,9 +117,21 @@ export async function egressFetch(url: string, init: RequestInit = {}): Promise<
   // UA; clobbering it here made those fallbacks fail intermittently.
   if (!headers.has("user-agent")) headers.set("User-Agent", egress.ua);
   if (!egress.proxy) return fetch(url, { ...init, headers });
+  const proxy = egress.proxy;
   try {
-    return await fetchViaProxy(url, { ...init, headers }, egress.proxy);
+    return await fetchViaProxy(url, { ...init, headers }, proxy);
   } catch {
+    // A dead proxy must not silently degrade to a direct request — the
+    // direct (datacenter-IP) path is exactly what Instagram blocks, so the
+    // failure would otherwise masquerade as more blocking. Log the proxy
+    // host only, never its credentials.
+    let proxyHost = "configured proxy";
+    try {
+      proxyHost = new URL(proxy).host;
+    } catch {
+      /* keep the generic label */
+    }
+    console.warn(`[clipkeep] egress proxy ${proxyHost} failed; falling back to a direct request`);
     return fetch(url, { ...init, headers });
   }
 }

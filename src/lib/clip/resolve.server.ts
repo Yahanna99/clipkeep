@@ -2,6 +2,7 @@ import { ByteLru } from "./cache";
 import { Cooldown } from "./cooldown";
 import { egressFetch, rotateEgress, runWithEgress } from "./egress.server";
 import {
+  bareMediaId,
   ensureHttp,
   extractPostUrl,
   instagramShortcode,
@@ -556,7 +557,7 @@ async function instagramOembed(sourceUrl: string): Promise<{
 }
 
 async function instagramMobileInfo(mediaId: string): Promise<Record<string, unknown> | null> {
-  const response = await readText(`https://i.instagram.com/api/v1/media/${mediaId}/info/`, {
+  const response = await readText(`https://i.instagram.com/api/v1/media/${bareMediaId(mediaId)}/info/`, {
     Accept: "*/*",
     "Accept-Language": "en-US",
     "User-Agent": IG_MOBILE_UA,
