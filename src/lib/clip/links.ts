@@ -91,6 +91,15 @@ export function instagramShortcode(raw: string): string | null {
   }
 }
 
+/**
+ * oEmbed hands back media ids as "<pk>_<user id>", while the media/info API
+ * is documented against the bare pk — the form shortcode-derived ids already
+ * take. Normalize so both resolver paths call it the same way.
+ */
+export function bareMediaId(mediaId: string): string {
+  return mediaId.split("_")[0];
+}
+
 export function isInstagramStory(raw: string): boolean {
   try {
     return /\/stories\//i.test(new URL(ensureHttp(raw)).pathname);
