@@ -1,6 +1,7 @@
 import { ByteLru } from "./cache";
 import { egressFetch } from "./egress.server";
 import { stampMp4Times } from "./mp4";
+import { streamRejection, streamResponseHeaders } from "./stream";
 
 const ALLOWED = [
   /(^|\.)cdninstagram\.com$/i,
@@ -363,11 +364,35 @@ export async function proxyMedia(request: Request): Promise<Response> {
   }
 }
 
+/**
+ * Stream mode (`stream=1`, set only by the client's prepare download):
+ * pass the upstream body straight through instead of buffering the whole
+ * file server-side first, so the browser sees bytes — and can show real
+ * download progress — from the first chunk. Uses the same upstream checks
+ * as the >MAX_BYTES streaming branch below. Trade-offs, by design: the
+ * full-file cache is bypassed (each prepare fetches upstream fresh), and
+ * the server-side webp→jpeg pre-conversion in loadFull doesn't run — the
+ * client still converts webp itself and stamps mp4 times after assembly,
+ * exactly as it does for buffered responses.
+ */
+async function streamUpstream(target: URL, accept: string, downloadName: string): Promise<Response> {
+  const upstream = await fetchAllowed(target, null, accept);
+  const type = contentType(upstream);
+  const rejection = streamRejection(upstream.status, type, htmlType(type));
+  if (rejection) {
+    await upstream.body?.cancel().catch(() => undefined);
+    return fail(rejection.status, rejection.message);
+  }
+  const headers = streamResponseHeaders(type, upstream.headers.get("content-length"), downloadName);
+  return new Response(upstream.body, { status: 200, headers });
+}
+
 async function handleProxy(request: Request): Promise<Response> {
   const query = new URL(request.url).searchParams;
   const raw = query.get("u") || "";
   const downloadName = safeFileName(query.get("n") || "clipkeep");
   const download = query.get("dl") === "1";
+  const stream = query.get("stream") === "1";
   let target: URL;
   try {
     target = new URL(raw);
@@ -383,6 +408,16 @@ async function handleProxy(request: Request): Promise<Response> {
     : "*/*";
   const range = download ? null : request.headers.get("range");
   const openEnded = !range || /^bytes=0-$/i.test(range.trim());
+
+  if (stream) {
+    try {
+      return await streamUpstream(target, accept, downloadName);
+    } catch (error) {
+      if (error instanceof UpstreamStatus) return fail(error.status, error.message);
+      const message = error instanceof Error ? error.message : "";
+      return fail(502, message || "Download failed");
+    }
+  }
 
   if (!openEnded && !fullLoads.has(`${accept}\n${target.toString()}`)) {
     try {

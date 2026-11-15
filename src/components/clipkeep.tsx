@@ -4,6 +4,13 @@ import { toast, Toaster } from "sonner";
 import { extractPostUrl, isConcretePost, isRedditHost, platformOf, slug } from "@/lib/clip/links";
 import { stampMp4Times } from "@/lib/clip/mp4";
 import { mapStaggered } from "@/lib/clip/pool";
+import {
+  createProgressTracker,
+  progressLabel,
+  readResponseBytes,
+  type ProgressCallback,
+  type ProgressSnapshot,
+} from "@/lib/clip/progress";
 import { resolveClip } from "@/lib/clip/resolve";
 import type { ClipMedia, Platform, Variant } from "@/lib/clip/types";
 import { BrandTitle } from "@/components/brand-title";
@@ -71,9 +78,12 @@ function fileName(media: ClipMedia, variant: Variant): string {
   return `${who}-${what}.${variant.ext}`;
 }
 
-function proxyUrl(url: string, name: string, download = false): string {
+function proxyUrl(url: string, name: string, download = false, stream = false): string {
   const params = new URLSearchParams({ u: url, n: name });
   if (download) params.set("dl", "1");
+  // Prepare downloads stream through the proxy so the browser can count
+  // bytes as they arrive (see progress.ts); previews keep the buffered path.
+  if (stream) params.set("stream", "1");
   return `/api/file?${params.toString()}`;
 }
 
@@ -470,6 +480,7 @@ export function Clipkeep() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [ready, setReady] = useState<ReadyFile | null>(null);
   const [preparing, setPreparing] = useState(false);
+  const [progress, setProgress] = useState<ProgressSnapshot | null>(null);
   const [attempt, setAttempt] = useState(0);
   const [saveFault, setSaveFault] = useState<string | null>(null);
   const [saveBounce, setSaveBounce] = useState(false);
@@ -619,6 +630,7 @@ export function Clipkeep() {
     if (!media || !selected || saveCount === 0) {
       clearReady();
       setPreparing(false);
+      setProgress(null);
       return;
     }
     const source = media;
@@ -626,10 +638,27 @@ export function Clipkeep() {
     let cancelledRun = false;
     setPreparing(true);
     setSaveFault(null);
+    setProgress(null);
     clearReady();
+    // Aggregate byte progress across this run's files (up to 2 at once).
+    // Chunk callbacks can fire fast, so publish at most ~8 times a second,
+    // plus the moment a file finishes.
+    const tracker = createProgressTracker();
+    let lastPublishAt = 0;
+    const publishProgress = (variantId: string): ProgressCallback => {
+      return (report) => {
+        tracker.report(variantId, report);
+        const now = Date.now();
+        if (!report.done && now - lastPublishAt < 120) return;
+        lastPublishAt = now;
+        if (!cancelledRun) setProgress(tracker.snapshot());
+      };
+    };
     (async () => {
       try {
-        const files = await mapStaggered(targets, 2, 400, (variant) => downloadFile(source, variant, true));
+        const files = await mapStaggered(targets, 2, 400, (variant) =>
+          downloadFile(source, variant, true, publishProgress(variant.id)),
+        );
         if (cancelledRun) return;
         const file =
           files.length === 1
@@ -649,7 +678,10 @@ export function Clipkeep() {
         setSaveFault(message);
         toast.error("Couldn’t prepare that file", { description: message });
       } finally {
-        if (!cancelledRun) setPreparing(false);
+        if (!cancelledRun) {
+          setPreparing(false);
+          setProgress(null);
+        }
       }
     })();
     return () => {
@@ -675,11 +707,16 @@ export function Clipkeep() {
     return pending;
   }
 
-  async function downloadFile(source: ClipMedia, variant: Variant, allowRefresh: boolean): Promise<File> {
+  async function downloadFile(
+    source: ClipMedia,
+    variant: Variant,
+    allowRefresh: boolean,
+    onProgress?: ProgressCallback,
+  ): Promise<File> {
     const name = fileName(source, variant);
     try {
-      const response = await fetchWithRetry(proxyUrl(variant.url, name));
-      const buffer = new Uint8Array(await response.arrayBuffer());
+      const response = await fetchWithRetry(proxyUrl(variant.url, name, false, true));
+      const buffer = await readResponseBytes(response, onProgress);
       const typeHeader = response.headers.get("content-type") || "";
       if (variant.kind === "image" && /webp/i.test(typeHeader)) return toJpeg(buffer, name);
       const bytes = variant.kind === "video" ? stampMp4Times(buffer) : buffer;
@@ -690,7 +727,7 @@ export function Clipkeep() {
         const again = await refreshSource(source);
         const nextVariant = variantMatch(again, variant);
         try {
-          return await downloadFile(again, nextVariant, false);
+          return await downloadFile(again, nextVariant, false, onProgress);
         } catch (againError) {
           if (againError instanceof DownloadError && (againError.status === 403 || againError.status === 410)) {
             throw new DownloadError(againError.status, "Couldn’t prepare that file. Tap Save to try again.");
@@ -1122,6 +1159,24 @@ export function Clipkeep() {
                     Open file
                   </a>
                 </div>
+                {preparing && !ready && progress ? (
+                  <div className="download-progress mt-4">
+                    <div
+                      className="download-progress-track"
+                      role="progressbar"
+                      aria-label="Download progress"
+                      aria-valuemin={0}
+                      aria-valuemax={100}
+                      aria-valuenow={progress.percent != null ? Math.floor(progress.percent) : undefined}
+                    >
+                      <div
+                        className={`download-progress-fill${progress.percent == null ? " is-indeterminate" : ""}`}
+                        style={progress.percent != null ? { width: `${progress.percent}%` } : undefined}
+                      />
+                    </div>
+                    <p className="download-progress-label">{progressLabel(progress)}</p>
+                  </div>
+                ) : null}
                 <p className="mt-3 text-xs leading-relaxed text-subtle">
                   {preparing && !ready
                     ? "Getting the file ready so the first save goes through."
