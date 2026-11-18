@@ -1,4 +1,4 @@
-export type Platform = "tiktok" | "instagram" | "x";
+export type Platform = "tiktok" | "x";
 export type MediaKind = "image" | "video" | "audio";
 
 export type Variant = {
