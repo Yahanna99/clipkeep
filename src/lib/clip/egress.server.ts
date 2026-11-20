@@ -1,4 +1,3 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import http from "node:http";
 import https from "node:https";
 import { Readable } from "node:stream";
@@ -9,10 +8,8 @@ const AGENTS = [
   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36",
 ];
 
-const pinnedSlot = new AsyncLocalStorage<number>();
-
 function proxyList(): string[] {
-  return (process.env.CLIPKEEP_IG_PROXIES || process.env.HTTPS_PROXY || "")
+  return (process.env.CLIPKEEP_PROXIES || process.env.HTTPS_PROXY || "")
     .split(",")
     .map((value) => value.trim())
     .filter((value) => /^https?:\/\//i.test(value));
@@ -20,19 +17,11 @@ function proxyList(): string[] {
 
 let slot = 0;
 
-export function rotateEgress(): void {
-  const proxies = proxyList();
-  slot = (slot + 1) % Math.max(proxies.length, AGENTS.length, 1);
-}
-
-/** Keep one egress identity for a cookie + GraphQL pair. */
-export function runWithEgress<T>(work: () => Promise<T>): Promise<T> {
-  return pinnedSlot.run(slot, work);
-}
-
+/** Rotate the browser identity / proxy slot per request. */
 function current(): { ua: string; proxy: string | null } {
   const proxies = proxyList();
-  const index = pinnedSlot.getStore() ?? slot;
+  const index = slot;
+  slot = (slot + 1) % Math.max(proxies.length, AGENTS.length, 1);
   return {
     ua: AGENTS[index % AGENTS.length],
     proxy: proxies.length ? proxies[index % proxies.length] : null,
@@ -108,23 +97,21 @@ function fetchViaProxy(targetUrl: string, init: RequestInit, proxyUrl: string): 
   });
 }
 
-/** Instagram fetches rotate browser identity and, when configured, residential proxies. */
+/** Resolver fetches rotate browser identity and, when configured, go out through a proxy. */
 export async function egressFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const egress = current();
   const headers = new Headers(init.headers);
-  // Only supply the rotated UA when the caller didn't set one. Several IG
-  // endpoints (the mobile media/info API, the mobile oembed) require their own
-  // UA; clobbering it here made those fallbacks fail intermittently.
+  // Only supply the rotated UA when the caller didn't set one — some
+  // endpoints require their own UA, and clobbering it made them fail.
   if (!headers.has("user-agent")) headers.set("User-Agent", egress.ua);
   if (!egress.proxy) return fetch(url, { ...init, headers });
   const proxy = egress.proxy;
   try {
     return await fetchViaProxy(url, { ...init, headers }, proxy);
   } catch {
-    // A dead proxy must not silently degrade to a direct request — the
-    // direct (datacenter-IP) path is exactly what Instagram blocks, so the
-    // failure would otherwise masquerade as more blocking. Log the proxy
-    // host only, never its credentials.
+    // A dead proxy must not silently degrade to a direct request without a
+    // trace — the failure would otherwise masquerade as upstream blocking.
+    // Log the proxy host only, never its credentials.
     let proxyHost = "configured proxy";
     try {
       proxyHost = new URL(proxy).host;

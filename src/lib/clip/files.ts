@@ -1,11 +1,8 @@
 import { ByteLru } from "./cache";
-import { egressFetch } from "./egress.server";
 import { stampMp4Times } from "./mp4";
 import { streamRejection, streamResponseHeaders } from "./stream";
 
 const ALLOWED = [
-  /(^|\.)cdninstagram\.com$/i,
-  /(^|\.)fbcdn\.net$/i,
   /(^|\.)tiktokcdn\.com$/i,
   /(^|\.)tiktokcdn-us\.com$/i,
   /(^|\.)tiktokcdn-eu\.com$/i,
@@ -30,13 +27,6 @@ const fullLoads = new ByteLru<Promise<{ type: string; bytes: Uint8Array }>>({
   ttlMs: CACHE_MS,
 });
 
-const IG_CONCURRENCY = 2;
-const IG_GAP_MS = 400;
-let igActive = 0;
-let igNextAt = 0;
-let igTimer: ReturnType<typeof setTimeout> | null = null;
-const igWaiters: Array<() => void> = [];
-
 class UpstreamStatus extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -44,39 +34,6 @@ class UpstreamStatus extends Error {
     this.name = "UpstreamStatus";
     this.status = status;
   }
-}
-
-function pumpIg() {
-  if (igTimer || igActive >= IG_CONCURRENCY || igWaiters.length === 0) return;
-  const delay = Math.max(0, igNextAt - Date.now());
-  if (delay > 0) {
-    igTimer = setTimeout(() => {
-      igTimer = null;
-      pumpIg();
-    }, delay);
-    return;
-  }
-  igNextAt = Date.now() + IG_GAP_MS;
-  igActive += 1;
-  const resume = igWaiters.shift();
-  resume?.();
-  pumpIg();
-}
-
-function acquireIg(): Promise<void> {
-  return new Promise((resolve) => {
-    igWaiters.push(resolve);
-    pumpIg();
-  });
-}
-
-function releaseIg() {
-  igActive = Math.max(0, igActive - 1);
-  pumpIg();
-}
-
-function instagramHost(hostname: string): boolean {
-  return /instagram|fbcdn/i.test(hostname);
 }
 
 export function safeFileName(name: string): string {
@@ -89,7 +46,6 @@ function allowedHost(hostname: string): boolean {
 }
 
 function refererFor(hostname: string): string {
-  if (/instagram|fbcdn/i.test(hostname)) return "https://www.instagram.com/";
   if (/tiktok/i.test(hostname)) return "https://www.tiktok.com/";
   if (/twimg/i.test(hostname)) return "https://x.com/";
   return "https://clipkeep.grok.me/";
@@ -133,9 +89,8 @@ async function fetchAllowed(initial: URL, range: string | null, accept = "*/*"):
       "Sec-Fetch-Site": "cross-site",
     });
     if (range) headers.set("Range", range);
-    const instagram = instagramHost(current.hostname);
-    if (!instagram) headers.set("User-Agent", UA);
-    const response = await (instagram ? egressFetch : fetch)(current.toString(), {
+    headers.set("User-Agent", UA);
+    const response = await fetch(current.toString(), {
       headers,
       redirect: "manual",
       signal: AbortSignal.timeout(120000),
@@ -155,100 +110,87 @@ async function fetchAllowed(initial: URL, range: string | null, accept = "*/*"):
 async function loadFull(target: URL, accept: string): Promise<{ type: string; bytes: Uint8Array }> {
   let lastStatus = 0;
   let lastMessage = "Download failed";
-  const ig = instagramHost(target.hostname);
-
   for (let attempt = 0; attempt < 3; attempt += 1) {
     if (attempt && (lastStatus === 429 || lastStatus === 0)) {
       await new Promise((resolve) => setTimeout(resolve, lastStatus === 429 ? 800 * attempt : 400 * attempt));
     }
-    if (ig) await acquireIg();
-    let released = false;
-    const release = () => {
-      if (released || !ig) return;
-      released = true;
-      releaseIg();
-    };
+    let upstream: Response;
     try {
-      let upstream: Response;
-      try {
-        upstream = await fetchAllowed(target, null, accept);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : lastMessage;
-        if (/isn’t allowed|redirected/i.test(message)) throw error;
-        lastStatus = 0;
-        lastMessage = message || lastMessage;
-        if (attempt === 2) throw new Error(lastMessage);
-        continue;
-      }
-
-      const status = upstream.status;
-      let type = contentType(upstream);
-      if (status === 403 || status === 410) {
-        await upstream.body?.cancel().catch(() => undefined);
-        throw new UpstreamStatus(status, "The file link expired.");
-      }
-      if (htmlType(type)) {
-        await upstream.body?.cancel().catch(() => undefined);
-        throw new UpstreamStatus(403, "The file link expired.");
-      }
-      if (status === 404) {
-        await upstream.body?.cancel().catch(() => undefined);
-        throw new UpstreamStatus(404, "The file link expired. Fetch the post again, then save.");
-      }
-      if (status === 429) {
-        await upstream.body?.cancel().catch(() => undefined);
-        lastStatus = 429;
-        if (attempt < 2) continue;
-        throw new UpstreamStatus(429, "Rate limited");
-      }
-      if (!upstream.ok && status !== 206) {
-        await upstream.body?.cancel().catch(() => undefined);
-        lastStatus = status;
-        if (attempt < 2 && status >= 500) continue;
-        throw new UpstreamStatus(status || 502, "Download failed");
-      }
-      if (!type) {
-        await upstream.body?.cancel().catch(() => undefined);
-        lastStatus = 0;
-        lastMessage = "Download failed";
-        if (attempt === 2) throw new Error(lastMessage);
-        continue;
-      }
-
-      if (type === "image/webp" && accept.includes("image/jpeg")) {
-        try {
-          const jpeg = await fetchAllowed(target, null, "image/jpeg");
-          const jpegType = contentType(jpeg);
-          if ((jpeg.ok || jpeg.status === 206) && jpegType.startsWith("image/") && jpegType !== "image/webp" && !htmlType(jpegType)) {
-            await upstream.body?.cancel().catch(() => undefined);
-            upstream = jpeg;
-            type = jpegType;
-          } else {
-            await jpeg.body?.cancel().catch(() => undefined);
-          }
-        } catch {
-          /* keep the first response */
-        }
-      }
-
-      const length = Number(upstream.headers.get("content-length") || "0");
-      if (length > MAX_BYTES) {
-        await upstream.body?.cancel().catch(() => undefined);
-        throw new Error("large");
-      }
-      const bytes = new Uint8Array(await upstream.arrayBuffer());
-      if (bytes.byteLength > MAX_BYTES) throw new Error("large");
-      if (htmlBytes(bytes)) throw new UpstreamStatus(403, "The file link expired.");
-      if (!bytes.byteLength) {
-        lastStatus = 0;
-        lastMessage = "Download failed";
-        if (attempt === 2) throw new Error(lastMessage);
-        continue;
-      }
-      return { type: type || "application/octet-stream", bytes };
-    } finally {
-      release();
+      upstream = await fetchAllowed(target, null, accept);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : lastMessage;
+      if (/isn’t allowed|redirected/i.test(message)) throw error;
+      lastStatus = 0;
+      lastMessage = message || lastMessage;
+      if (attempt === 2) throw new Error(lastMessage);
+      continue;
     }
+
+    const status = upstream.status;
+    let type = contentType(upstream);
+    if (status === 403 || status === 410) {
+      await upstream.body?.cancel().catch(() => undefined);
+      throw new UpstreamStatus(status, "The file link expired.");
+    }
+    if (htmlType(type)) {
+      await upstream.body?.cancel().catch(() => undefined);
+      throw new UpstreamStatus(403, "The file link expired.");
+    }
+    if (status === 404) {
+      await upstream.body?.cancel().catch(() => undefined);
+      throw new UpstreamStatus(404, "The file link expired. Fetch the post again, then save.");
+    }
+    if (status === 429) {
+      await upstream.body?.cancel().catch(() => undefined);
+      lastStatus = 429;
+      if (attempt < 2) continue;
+      throw new UpstreamStatus(429, "Rate limited");
+    }
+    if (!upstream.ok && status !== 206) {
+      await upstream.body?.cancel().catch(() => undefined);
+      lastStatus = status;
+      if (attempt < 2 && status >= 500) continue;
+      throw new UpstreamStatus(status || 502, "Download failed");
+    }
+    if (!type) {
+      await upstream.body?.cancel().catch(() => undefined);
+      lastStatus = 0;
+      lastMessage = "Download failed";
+      if (attempt === 2) throw new Error(lastMessage);
+      continue;
+    }
+
+    if (type === "image/webp" && accept.includes("image/jpeg")) {
+      try {
+        const jpeg = await fetchAllowed(target, null, "image/jpeg");
+        const jpegType = contentType(jpeg);
+        if ((jpeg.ok || jpeg.status === 206) && jpegType.startsWith("image/") && jpegType !== "image/webp" && !htmlType(jpegType)) {
+          await upstream.body?.cancel().catch(() => undefined);
+          upstream = jpeg;
+          type = jpegType;
+        } else {
+          await jpeg.body?.cancel().catch(() => undefined);
+        }
+      } catch {
+        /* keep the first response */
+      }
+    }
+
+    const length = Number(upstream.headers.get("content-length") || "0");
+    if (length > MAX_BYTES) {
+      await upstream.body?.cancel().catch(() => undefined);
+      throw new Error("large");
+    }
+    const bytes = new Uint8Array(await upstream.arrayBuffer());
+    if (bytes.byteLength > MAX_BYTES) throw new Error("large");
+    if (htmlBytes(bytes)) throw new UpstreamStatus(403, "The file link expired.");
+    if (!bytes.byteLength) {
+      lastStatus = 0;
+      lastMessage = "Download failed";
+      if (attempt === 2) throw new Error(lastMessage);
+      continue;
+    }
+    return { type: type || "application/octet-stream", bytes };
   }
   if (lastStatus === 429) throw new UpstreamStatus(429, "Rate limited");
   throw new Error(lastMessage);

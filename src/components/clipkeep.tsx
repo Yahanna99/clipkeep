@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Check, ClipboardPaste, Download, ExternalLink, X } from "lucide-react";
 import { toast, Toaster } from "sonner";
-import { extractPostUrl, isConcretePost, isRedditHost, platformOf, slug } from "@/lib/clip/links";
+import { extractPostUrl, isConcretePost, isInstagramLink, isRedditHost, platformOf, slug } from "@/lib/clip/links";
 import { stampMp4Times } from "@/lib/clip/mp4";
 import { mapStaggered } from "@/lib/clip/pool";
 import {
@@ -19,10 +19,10 @@ import { allTargetsOf, videoGroups } from "@/lib/clip/targets";
 const HISTORY_KEY = "clipkeep.history.v1";
 
 const CAPABILITIES = [
-  "saves Instagram reels",
   "keeps TikToks watermark-free",
   "grabs videos from X",
-  "pulls every carousel still",
+  "saves TikTok Live Photos",
+  "pulls every photo in a post",
   "downloads original quality",
   "leaves the watermark behind",
 ] as const;
@@ -41,7 +41,6 @@ type ReadyFile = { file: File; files: File[]; url: string };
 
 function platformName(platform: Platform): string {
   if (platform === "tiktok") return "TikTok";
-  if (platform === "instagram") return "Instagram";
   return "X";
 }
 
@@ -56,7 +55,7 @@ function audiosOf(media: ClipMedia): Variant[] {
 function bestVariant(media: ClipMedia): Variant {
   const groups = videoGroups(media);
   const photos = imagesOf(media);
-  // Multi-still posts (Instagram carousels / TikTok photos): open the gallery first.
+  // Multi-still posts (TikTok photo posts / X photo+video posts): open the gallery first.
   if (photos.length > 1) return photos[0];
   if (groups.length && photos.length) return groups[0][0];
   if (photos.length) return photos[0];
@@ -106,7 +105,7 @@ function readHistory(): HistoryItem[] {
             item &&
             typeof item.sourceUrl === "string" &&
             typeof item.title === "string" &&
-            (item.platform === "tiktok" || item.platform === "instagram" || item.platform === "x"),
+            (item.platform === "tiktok" || item.platform === "x"),
         )
       : [];
   } catch {
@@ -146,7 +145,7 @@ class DownloadError extends Error {
 
 function failureMessage(status: number, offline: boolean): string {
   if (offline || status === 0) return "Connection dropped. Check your connection and retry.";
-  if (status === 429) return "Instagram is rate-limiting us right now. Wait a minute and try again.";
+  if (status === 429) return "That site is rate-limiting us right now. Wait a minute and try again.";
   if (status === 403 || status === 410) return "This link expired. Trying a fresh copy…";
   return "Couldn’t prepare that file. Tap Save to try again.";
 }
@@ -453,15 +452,6 @@ function PlatformIcon({ platform, className = "size-4" }: { platform: Platform; 
       </svg>
     );
   }
-  if (platform === "instagram") {
-    return (
-      <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-        <rect x="3.5" y="3.5" width="17" height="17" rx="5" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" strokeWidth="1.8" />
-        <circle cx="17.2" cy="6.8" r="1.1" fill="currentColor" />
-      </svg>
-    );
-  }
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
       <path fill="currentColor" d="M3 4.5h5.3l3.8 5.4L16.8 4.5H21l-6.6 8.4L21 19.5h-5.3l-4.2-5.9-4.7 5.9H3l7-8.8L3 4.5Z" />
@@ -559,6 +549,11 @@ export function Clipkeep() {
   }
 
   async function fetchPost(input: string, force = false) {
+    if (isInstagramLink(input)) {
+      setError("Instagram links aren’t supported. Paste a TikTok or X link.");
+      setStatus("error");
+      return;
+    }
     const url = extractPostUrl(input);
     if (!url || !isConcretePost(url)) {
       let host = "";
@@ -569,8 +564,8 @@ export function Clipkeep() {
       }
       setError(
         host && isRedditHost(host)
-          ? "Clipkeep doesn’t save Reddit posts. Paste a TikTok, Instagram, or X link."
-          : "Paste a TikTok, Instagram, or X link.",
+          ? "Clipkeep doesn’t save Reddit posts. Paste a TikTok or X link."
+          : "Paste a TikTok or X link.",
       );
       setStatus("error");
       return;
@@ -853,7 +848,7 @@ export function Clipkeep() {
           <section className="mt-8 sm:mt-12">
             <div className="reveal flex items-center justify-between gap-3">
               <p className="text-xs font-semibold uppercase tracking-[0.22em] text-accent">
-                Instagram · TikTok · X
+                TikTok · X
               </p>
               <p className="chip hidden items-center sm:inline-flex">Photos · videos · no watermark</p>
             </div>
@@ -865,7 +860,7 @@ export function Clipkeep() {
               <CapabilityOrbit />
             </div>
             <p className="sr-only">
-              Clipkeep saves Instagram reels, keeps TikToks watermark-free, grabs videos from X, pulls every carousel still, and downloads original quality.
+              Clipkeep keeps TikToks watermark-free, grabs videos and photos from X, saves TikTok Live Photos, pulls every photo in a post, and downloads original quality.
             </p>
             <p className="reveal reveal-delay-3 mt-5 max-w-md text-base leading-relaxed text-muted">
               Paste a public post. Save the video, one photo, every still — or everything at once. Original quality, watermark-free.
@@ -1184,9 +1179,7 @@ export function Clipkeep() {
                       ? saveFault
                       : saveAll
                         ? "Save all opens the share sheet — tap Save Images or Save Video to add everything to Photos at once. If Photos doesn’t offer it, the files download as one zip."
-                        : media.platform === "instagram"
-                          ? "On iPhone, Save opens the share sheet — tap Save Video or Save Image. If Photos doesn’t offer it, the file still downloads."
-                          : "On iPhone, Save puts it in Files or Photos."}
+                        : "On iPhone, Save opens the share sheet — tap Save Video or Save Image. If Photos doesn’t offer it, the file still downloads."}
                 </p>
               </div>
             </article>
@@ -1322,12 +1315,7 @@ function HowTo() {
     {
       platform: "tiktok",
       title: "TikTok",
-      body: "Share → Copy link. Paste that, even if TikTok adds extra words. Videos come back without the watermark. Photo posts save as stills you can put in Photos — not the slideshow clip.",
-    },
-    {
-      platform: "instagram",
-      title: "Instagram",
-      body: "On a Reel or post, tap ··· → Copy link. Carousels save every still (pick which ones). Save downloads the file even if Photos doesn’t offer Save Video. Stories and private accounts won’t work.",
+      body: "Share → Copy link. Paste that, even if TikTok adds extra words. Videos come back without the watermark. Photo posts save every still, and Live Photos save the still plus its motion video.",
     },
     {
       platform: "x",

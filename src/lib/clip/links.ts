@@ -10,6 +10,8 @@ const TIKTOK = new Set([
   "www.vt.tiktok.com",
 ]);
 
+// Kept only so Instagram links can be rejected with a clear message —
+// Instagram is not a supported platform and is never resolved.
 const INSTAGRAM = new Set([
   "instagram.com",
   "www.instagram.com",
@@ -41,11 +43,10 @@ const XHOSTS = new Set([
   "t.co",
 ]);
 
-const BARE =
-  /^(www\.)?(tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|instagram\.com|instagr\.am|x\.com|twitter\.com)\b/i;
+const BARE = /^(www\.)?(tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|x\.com|twitter\.com)\b/i;
 
 const EMBEDDED =
-  /(?:^|[\s<(])((?:www\.)?(?:(?:vm|vt)\.)?tiktok\.com\/[^\s<>"']+|instagram\.com\/[^\s<>"']+|instagr\.am\/[^\s<>"']+|x\.com\/[^\s<>"']+|twitter\.com\/[^\s<>"']+|t\.co\/[^\s<>"']+)/gi;
+  /(?:^|[\s<(])((?:www\.)?(?:(?:vm|vt)\.)?tiktok\.com\/[^\s<>"']+|x\.com\/[^\s<>"']+|twitter\.com\/[^\s<>"']+|t\.co\/[^\s<>"']+)/gi;
 
 export function ensureHttp(raw: string): string {
   let value = raw.trim().replace(/[\u200B-\u200D\uFEFF]/g, "");
@@ -72,37 +73,15 @@ export function platformOf(raw: string): Platform | null {
   }
   const host = hostOf(url);
   if (TIKTOK.has(host) || host.endsWith(".tiktok.com")) return "tiktok";
-  if (INSTAGRAM.has(host) || host.endsWith(".instagram.com")) return "instagram";
   if (XHOSTS.has(host) || host.endsWith(".twitter.com") || host.endsWith(".x.com")) return "x";
   return null;
 }
 
-export function instagramShortcode(raw: string): string | null {
+export function isInstagramLink(raw: string): boolean {
+  if (/(?:^|[^A-Za-z0-9.-])((?:www\.|m\.)?instagram\.com\/|instagr\.am\/)/i.test(raw)) return true;
   try {
-    const url = new URL(ensureHttp(raw));
-    const path = url.pathname;
-    const direct = path.match(/\/(?:p|reel|reels|tv)\/([A-Za-z0-9_-]+)/);
-    if (direct) return direct[1];
-    const share = path.match(/\/share\/(?:p|reel|reels)\/([A-Za-z0-9_-]+)/);
-    if (share) return share[1];
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * oEmbed hands back media ids as "<pk>_<user id>", while the media/info API
- * is documented against the bare pk — the form shortcode-derived ids already
- * take. Normalize so both resolver paths call it the same way.
- */
-export function bareMediaId(mediaId: string): string {
-  return mediaId.split("_")[0];
-}
-
-export function isInstagramStory(raw: string): boolean {
-  try {
-    return /\/stories\//i.test(new URL(ensureHttp(raw)).pathname);
+    const host = new URL(ensureHttp(raw)).hostname.toLowerCase();
+    return INSTAGRAM.has(host) || host.endsWith(".instagram.com");
   } catch {
     return false;
   }
@@ -132,11 +111,6 @@ function tiktokConcrete(raw: string): boolean {
 export function isConcretePost(raw: string): boolean {
   const platform = platformOf(raw);
   if (platform === "tiktok") return tiktokConcrete(raw);
-  if (platform === "instagram") {
-    if (isInstagramStory(raw)) return false;
-    const code = instagramShortcode(raw);
-    return !!code && code.length >= 5;
-  }
   if (platform === "x") {
     try {
       const url = new URL(ensureHttp(raw));
